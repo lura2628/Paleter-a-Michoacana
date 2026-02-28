@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>POS Michoacana Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-50 font-sans">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const App = () => {
+            const [db, setDb] = useState(null);
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState('login');
+            const [products, setProducts] = useState([]);
+            const [employees, setEmployees] = useState([]);
+            const [tickets, setTickets] = useState([]);
+            const [cart, setCart] = useState([]);
+            const [discountPct, setDiscountPct] = useState(0);
+
+            useEffect(() => {
+                const config = JSON.parse(localStorage.getItem('fb_config'));
+                if (config && !firebase.apps.length) {
+                    const app = firebase.initializeApp(config);
+                    setDb(app.firestore());
+                }
+            }, []);
+
+            useEffect(() => {
+                if (!db) return;
+                const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const unsubEmps = db.collection('empleados').onSnapshot(s => {
+                    const emps = s.docs.map(d => ({id:d.id, ...d.data()}));
+                    if(emps.length === 0) {
+                        db.collection('empleados').add({nombre: 'José', pin: '1820', rol: 'admin', canDiscount: true});
+                    }
+                    setEmployees(emps);
+                });
+                const hoy = new Date(); hoy.setHours(0,0,0,0);
+                const unsubTickets = db.collection('tickets').where('timestamp', '>=', hoy).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                return () => { unsubProds(); unsubEmps(); unsubTickets(); };
+            }, [db]);
+
+            const finalizarVenta = async () => {
+                const subtotal = cart.reduce((a, b) => a + (b.precio * b.qty), 0);
+                const total = subtotal * (1 - discountPct / 100);
+                const batch = db.batch();
+                const tRef = db.collection('tickets').doc();
+                batch.set(tRef, {
+                    vendedor: user.nombre, items: cart, total, descuento_pct: discountPct,
+                    hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                cart.forEach(item => batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) }));
+                await batch.commit();
+                alert("Venta Guardada"); setCart([]); setDiscountPct(0);
+            };
+
+            if (view === 'login') return (
+                <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-pink-50">
+                    <h1 className="text-4xl font-black text-pink-600 mb-10 italic uppercase">Michoacana</h1>
+                    <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+                        {employees.map(e => (
+                            <button key={e.id} onClick={() => {
+                                const p = prompt(`PIN para ${e.nombre}:`);
+                                if(p === e.pin) { setUser(e); setView('pos'); }
+                            }} className="bg-white p-8 rounded-3xl shadow-sm border-b-4 border-pink-200 font-bold uppercase">
+                                {e.nombre}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl">
+                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center">
+                        <span className="font-black italic uppercase">Michoacana</span>
+                        <div className="flex gap-4">
+                            {user.rol === 'admin' && (
+                                <div className="flex gap-2">
+                                    <button onClick={() => setView('pos')}>🛒</button>
+                                    <button onClick={() => setView('admin')}>📦</button>
+                                    <button onClick={() => setView('history')}>📊</button>
+                                </div>
+                            )}
+                            <button onClick={() => {setUser(null); setView('login');}}>🚪</button>
+                        </div>
+                    </nav>
+
+                    {view === 'pos' && (
+                        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+                            <div className="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto content-start bg-slate-50">
+                                {products.map(p => (
+                                    <button key={p.id} disabled={p.stock <= 0} onClick={() => {
+                                        setCart(prev => {
+                                            const ex = prev.find(i => i.id === p.id);
+                                            if(ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty+1} : i);
+                                            return [...prev, {...p, qty: 1}];
+                                        });
+                                    }} className={`p-4 rounded-3xl shadow-sm bg-white border ${p.stock <= 0 ? 'opacity-20' : ''}`}>
+                                        <p className="font-bold text-sm leading-none mb-1">{p.nombre}</p>
+                                        <p className="text-pink-600 font-black">${p.precio}</p>
+                                        <p className="text-[10px] text-gray-400 font-bold">Stock: {p.stock}</p>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="w-full md:w-80 bg-white border-l p-5 flex flex-col">
+                                <h2 className="font-black text-xs text-slate-400 uppercase mb-4">Carrito</h2>
+                                <div className="flex-1 overflow-y-auto">
+                                    {cart.map(item => (
+                                        <div key={item.id} className="flex justify-between text-sm mb-2 border-b pb-1">
+                                            <span>{item.nombre} x{item.qty}</span>
+                                            <span className="font-bold text-pink-600">${item.precio * item.qty}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="pt-4 border-t">
+                                    {user.canDiscount && (
+                                        <div className="flex gap-1 mb-4">
+                                            {[10, 20, 30].map(pct => (
+                                                <button key={pct} onClick={() => setDiscountPct(pct)} className={`flex-1 py-1 rounded-lg text-xs font-bold border ${discountPct===pct?'bg-pink-600 text-white':'text-pink-600 border-pink-100'}`}>-{pct}%</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between font-black text-2xl mb-4">
+                                        <span>TOTAL</span>
+                                        <span>${(cart.reduce((a,b)=>a+(b.precio*b.qty), 0) * (1 - discountPct/100)).toFixed(0)}</span>
+                                    </div>
+                                    <button onClick={finalizarVenta} disabled={cart.length===0} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-pink-100">COBRAR</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'admin' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-50 space-y-6">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-2xl font-black uppercase italic">Inventario</h2>
+                                <button onClick={() => {
+                                    const n = prompt("Nombre:"); const p = prompt("Precio:"); const s = prompt("Stock:");
+                                    if(n && p) db.collection('productos').add({nombre: n, precio: Number(p), stock: Number(s)});
+                                }} className="bg-green-500 text-white px-4 py-2 rounded-xl font-bold">+ Nuevo</button>
+                            </div>
+                            {products.map(p => (
+                                <div key={p.id} className="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between">
+                                    <div className="flex-1"><p className="font-bold">{p.nombre}</p><p className="text-pink-600 font-black">$ {p.precio}</p></div>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" className="w-16 border rounded p-1 text-center" defaultValue={p.stock} onBlur={(e) => db.collection('productos').doc(p.id).update({stock: Number(e.target.value)})} />
+                                        <button onClick={() => db.collection('productos').doc(p.id).delete()} className="text-red-300 text-xs">🗑️</button>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="border-t pt-6">
+                                <h2 className="text-xl font-black uppercase text-slate-400 mb-4">Empleados</h2>
+                                <button onClick={() => {
+                                    const n = prompt("Nombre:"); const pin = prompt("PIN:"); const d = confirm("¿Puede dar descuento?");
+                                    if(n && pin) db.collection('empleados').add({nombre: n, pin, rol: 'ventas', canDiscount: d});
+                                }} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs mb-4">+ Nuevo Empleado</button>
+                                {employees.map(e => (
+                                    <div key={e.id} className="text-xs bg-white p-2 rounded mb-1 flex justify-between">
+                                        <span>{e.nombre} - PIN: {e.pin} {e.canDiscount ? '(✅ Desc)' : ''}</span>
+                                        <button onClick={() => db.collection('empleados').doc(e.id).delete()}>❌</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'history' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-50">
+                            <div className="bg-pink-600 p-6 rounded-3xl mb-6 text-white shadow-xl shadow-pink-100 text-center">
+                                <p className="text-xs uppercase font-bold mb-1 opacity-80">Ventas de Hoy</p>
+                                <p className="text-5xl font-black">${tickets.reduce((a,b)=>a+b.total, 0).toFixed(0)}</p>
+                            </div>
+                            <div className="space-y-3">
+                                {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
+                                    <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-pink-500 flex justify-between">
+                                        <div><p className="font-bold text-sm">{t.hora} - {t.vendedor}</p><p className="text-[10px] text-gray-400">{t.items.map(i=>i.nombre).join(', ')}</p></div>
+                                        <p className="font-black text-pink-600">${t.total}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
