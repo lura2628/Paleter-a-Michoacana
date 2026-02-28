@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Sistema Integral</title>
+    <title>Michoacana Pro - Edición Total</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -76,9 +76,27 @@
             };
 
             const agregarVentaLibre = () => {
-                const p = prompt("Precio del producto:");
-                const n = prompt("Nombre/Concepto:");
+                const p = prompt("Precio:");
+                const n = prompt("Concepto:");
                 if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1}]); setShowCart(true); }
+            };
+
+            const handleUpdateProduct = (id, field, value) => {
+                db.collection('productos').doc(id).update({ [field]: field === 'nombre' ? value.toUpperCase() : Number(value) });
+            };
+
+            const handleAddProduct = () => {
+                const n = prompt("Nombre del sabor/producto:");
+                const p = prompt("Precio:");
+                const s = prompt("Stock inicial:");
+                if(n && p && s) {
+                    db.collection('productos').add({
+                        nombre: n.toUpperCase(),
+                        precio: Number(p),
+                        stock: Number(s),
+                        categoria: catActiva // Se agrega a la categoría que estés viendo
+                    });
+                }
             };
 
             if (view === 'login') return (
@@ -90,7 +108,7 @@
                                 const p = prompt(`PIN para ${e.nombre}:`);
                                 if(p === e.pin) { setUser(e); setView('pos'); }
                             }} className="bg-white p-6 rounded-[30px] shadow-lg font-black uppercase text-gray-700 active:scale-95 transition-all">
-                                {e.nombre}<p className="text-[10px] text-pink-400 font-bold">{e.rol}</p>
+                                {e.nombre}<p className="text-[10px] text-pink-400 font-bold uppercase">{e.rol}</p>
                             </button>
                         ))}
                     </div>
@@ -135,11 +153,11 @@
                             </div>
 
                             <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_40px_rgba(0,0,0,0.2)] z-40 flex flex-col max-h-[85vh] ${!showCart ? 'cart-hidden' : ''}`}>
-                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">RESUMEN CARRITO</span></button>
+                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">RESUMEN</span></button>
                                 <div className="p-5 overflow-y-auto flex-1">
                                     {cart.map(item => (
                                         <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-3 rounded-2xl border">
-                                            <div className="flex-1 pr-2"><p className="font-black text-xs uppercase text-slate-700">{item.nombre}</p><p className="text-pink-500 font-bold text-[10px]">${item.precio} c/u</p></div>
+                                            <div className="flex-1 pr-2"><p className="font-black text-xs uppercase text-slate-700">{item.nombre}</p></div>
                                             <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl border shadow-sm">
                                                 <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400 text-lg">-</button>
                                                 <span className="font-black text-sm">{item.qty}</span>
@@ -155,15 +173,13 @@
                                                     <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[10px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
                                                 ))}
                                             </div>
-                                            <div className="text-right leading-none"><p className="text-[10px] font-black text-slate-400 uppercase mb-1">Total</p><p className="text-5xl font-black text-slate-800 tracking-tighter">${totalFinal}</p></div>
+                                            <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase">Total</p><p className="text-5xl font-black text-slate-800 tracking-tighter">${totalFinal}</p></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <div className="flex flex-col"><label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1">Pago Con:</label>
-                                            <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-3 bg-white rounded-xl font-black text-xl outline-none border-2 border-transparent focus:border-pink-300 shadow-inner" /></div>
-                                            <div className="flex flex-col"><label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1">Cambio:</label>
-                                            <div className={`p-3 rounded-xl font-black text-xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '...'}</div></div>
+                                            <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="Pagó con..." className="p-3 bg-white rounded-xl font-black text-xl outline-none border-2 border-transparent focus:border-pink-300 shadow-inner" />
+                                            <div className={`p-3 rounded-xl font-black text-xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '...'}</div>
                                         </div>
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-2xl bg-pink-600 text-white font-black text-2xl uppercase shadow-lg active:scale-95 transition-all">COBRAR AHORA</button>
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-2xl bg-pink-600 text-white font-black text-2xl uppercase shadow-lg active:scale-95 transition-all">TERMINAR COBRO</button>
                                     </div>
                                 </div>
                             </div>
@@ -172,51 +188,50 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-                            <div className="bg-white p-7 rounded-[40px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-5 text-xl tracking-tighter">👥 Editar Personal</h2>
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal</h2>
                                 {employees.map(e => (
-                                    <div key={e.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border mb-3">
-                                        <input className="font-black uppercase text-sm bg-transparent w-full outline-none focus:text-pink-500" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                    <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border mb-2">
+                                        <input className="font-black uppercase text-xs bg-transparent w-full outline-none focus:text-pink-500" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex items-center gap-2">
-                                            <span className="text-[8px] font-black text-slate-400">PIN</span>
-                                            <input className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                            <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="ml-2 text-red-300">✕</button>
+                                            <input className="w-14 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('empleados').doc(e.id).delete()} className="text-red-200 ml-2">✕</button>
                                         </div>
                                     </div>
                                 ))}
-                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase tracking-widest">+ Nuevo Empleado</button>
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
                             </div>
 
-                            <div className="bg-white p-7 rounded-[40px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-5 text-xl tracking-tighter">🍦 Editar Inventario</h2>
-                                {products.map(p => (
-                                    <div key={p.id} className="p-4 bg-slate-50 rounded-[30px] border mb-4 shadow-sm">
-                                        <input className="font-black uppercase text-sm bg-transparent w-full mb-3 outline-none border-b border-pink-50 focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>db.collection('productos').doc(p.id).update({nombre: x.target.value.toUpperCase()})} />
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
+                                    <div className="flex gap-1 overflow-x-auto scroll-hide">
+                                        {categories.filter(c=>c!=='Venta Libre').map(c => (
+                                            <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1 rounded-lg font-black text-[8px] uppercase border ${catActiva===c?'bg-pink-500 text-white':'bg-slate-50 text-slate-400'}`}>{c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {products.filter(p => p.categoria === catActiva).map(p => (
+                                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3">
+                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-3 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
                                         <div className="flex justify-between items-center">
-                                            <div className="flex gap-3">
-                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>db.collection('productos').doc(p.id).update({stock: Number(x.target.value)})} /></div>
-                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase mb-1">Precio</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>db.collection('productos').doc(p.id).update({precio: Number(x.target.value)})} /></div>
+                                            <div className="flex gap-2">
+                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400 uppercase">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
+                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400 uppercase">Precio</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
                                             </div>
-                                            <button onClick={() => confirm("¿Borrar sabor?") && db.collection('productos').doc(p.id).delete()} className="text-red-200 font-black text-xl">✕</button>
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('productos').doc(p.id).delete()} className="text-red-200 font-black text-xl">✕</button>
                                         </div>
                                     </div>
                                 ))}
-                                <button onClick={()=>{const n=prompt("Sabor:"); const p=prompt("Precio:"); if(n&&p) db.collection('productos').add({nombre:n.toUpperCase(), precio:Number(p), stock:100, categoria:catActiva})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-2xl font-black text-[10px] uppercase">+ Añadir Nuevo Producto</button>
+                                <button onClick={handleAddProduct} className="w-full py-3 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-500 rounded-2xl font-black text-[10px] uppercase tracking-widest">+ Añadir a {catActiva}</button>
                             </div>
 
-                            <div className="bg-white p-7 rounded-[40px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-5 text-xl tracking-tighter">📑 Historial de Cortes</h2>
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">📑 Archivo de Cortes</h2>
                                 {cortes.map(c => (
-                                    <div key={c.id} className="p-5 bg-slate-50 rounded-[30px] border-l-[10px] border-pink-500 mb-4 shadow-sm">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div><p className="font-black text-xs uppercase text-slate-600">{c.fecha} - {c.hora}</p><p className="text-[10px] text-slate-400 font-bold uppercase">Resp: {c.responsable}</p></div>
-                                            <p className="text-3xl font-black text-green-600">${c.total}</p>
-                                        </div>
-                                        <div className="bg-white p-3 rounded-2xl border border-slate-100 space-y-1 text-[11px] font-bold uppercase text-slate-500">
-                                            {c.detalle_productos && Object.entries(c.detalle_productos).map(([n, q]) => (
-                                                <div key={n} className="flex justify-between border-b border-slate-50 last:border-0 py-1"><span>{n}</span><span className="text-pink-600">x{q}</span></div>
-                                            ))}
-                                        </div>
+                                    <div key={c.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 text-[10px]">
+                                        <div className="flex justify-between font-black uppercase mb-1"><span>{c.fecha} - {c.responsable}</span><span className="text-green-600">${c.total}</span></div>
+                                        <p className="text-slate-400 font-bold uppercase">{Object.entries(c.detalle_productos || {}).map(([k,v])=>`${k} x${v}`).join(', ')}</p>
                                     </div>
                                 ))}
                             </div>
@@ -225,11 +240,11 @@
 
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
-                            <div className="bg-pink-600 p-10 rounded-[50px] mb-8 text-white text-center shadow-2xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual (Ventas)</p>
-                                <p className="text-8xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
+                            <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
+                                <p className="text-[10px] font-black opacity-70 uppercase mb-2">Total en Caja</p>
+                                <p className="text-7xl font-black tracking-tighter mb-4">${totalCajaActual}</p>
                                 <button onClick={async () => {
-                                    if(!confirm(`¿Hacer corte por $${totalCajaActual}?`)) return;
+                                    if(!confirm(`¿Corte por $${totalCajaActual}?`)) return;
                                     const resumen = {};
                                     tickets.forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
                                     await db.collection('cortes').add({
@@ -240,19 +255,16 @@
                                     const b = db.batch();
                                     tickets.forEach(t => b.update(db.collection('tickets').doc(t.id), {cortado: true}));
                                     await b.commit();
-                                }} className="bg-white text-pink-600 px-8 py-4 rounded-3xl font-black text-xs uppercase shadow-xl active:scale-95 transition-all">Realizar Corte de Caja 💰</button>
+                                }} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Hacer Corte 💰</button>
                             </div>
-                            <div className="space-y-4 pb-24">
+                            <div className="space-y-3 pb-20">
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className="bg-white p-6 rounded-[35px] border-r-[12px] border-green-500 shadow-sm flex justify-between items-center transition-all">
-                                        <div className="flex-1 pr-4">
-                                            <div className="flex items-center gap-2 mb-1"><span className="font-black text-[12px] uppercase">{t.hora}</span><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span></div>
-                                            <p className="text-[10px] text-slate-400 font-bold uppercase italic leading-tight">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
+                                    <div key={t.id} className="bg-white p-4 rounded-[25px] border-r-8 border-green-500 shadow-sm flex justify-between items-center">
+                                        <div className="flex-1 pr-2">
+                                            <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor}</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase leading-tight truncate">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
                                         </div>
-                                        <div className="text-right leading-none">
-                                            <p className="text-3xl font-black tracking-tighter">${t.total}</p>
-                                            {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
-                                        </div>
+                                        <p className="text-2xl font-black">${t.total}</p>
                                     </div>
                                 ))}
                             </div>
