@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana POS - Maestría</title>
+    <title>Michoacana Pro - Analytics & Search</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -39,6 +39,7 @@
             const [showCart, setShowCart] = useState(false);
             const [pagoCon, setPagoCon] = useState('');
             const [tipoVenta, setTipoVenta] = useState('Venta');
+            const [searchTerm, setSearchTerm] = useState(''); // Estado para el buscador
 
             useEffect(() => {
                 const config = JSON.parse(localStorage.getItem('fb_config'));
@@ -53,7 +54,7 @@
                 const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(10).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(15).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
                     if(doc.exists) setCategories(doc.data().lista);
                     else db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly', 'Venta Libre']});
@@ -66,6 +67,18 @@
             const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
             const totalCajaActual = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
 
+            // LOGICA ESTADISTICAS
+            const salesByEmp = {}; const salesByProd = {}; const salesByHour = {};
+            tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                salesByEmp[t.vendedor] = (salesByEmp[t.vendedor] || 0) + t.total;
+                const hr = t.hora.split(':')[0]; 
+                salesByHour[hr] = (salesByHour[hr] || 0) + 1;
+                t.items.forEach(i => salesByProd[i.nombre] = (salesByProd[i.nombre] || 0) + i.qty);
+            });
+            const topEmp = Object.entries(salesByEmp).sort((a,b)=>b[1]-a[1])[0];
+            const topProd = Object.entries(salesByProd).sort((a,b)=>b[1]-a[1])[0];
+            const topHour = Object.entries(salesByHour).sort((a,b)=>b[1]-a[1])[0];
+
             const finalizarOperacion = async () => {
                 const batch = db.batch();
                 batch.set(db.collection('tickets').doc(), {
@@ -76,33 +89,19 @@
                 });
                 cart.forEach(i => { if(i.id !== 'libre') batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(-i.qty) }); });
                 await batch.commit();
-                setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta');
+                setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta'); setSearchTerm('');
             };
 
             const agregarLibre = () => {
-                const p = prompt("Precio:");
-                const n = prompt("Sabor/Concepto:");
+                const p = prompt("Precio:"); const n = prompt("Sabor/Concepto:");
                 if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1}]); setShowCart(true); }
             };
 
-            const handleUpdateProduct = (id, field, value) => {
-                db.collection('productos').doc(id).update({ [field]: field === 'nombre' ? value.toUpperCase() : Number(value) });
-            };
-
-            const handleAddProduct = () => {
-                const n = prompt("Nombre del sabor/producto:");
-                const p = prompt("Precio:");
-                const s = prompt("Stock inicial:");
-                if(n && p && s) {
-                    db.collection('productos').add({
-                        nombre: n.toUpperCase(), precio: Number(p), stock: Number(s), categoria: catActiva
-                    });
-                }
-            };
+            const handleUpdateProduct = (id, field, value) => db.collection('productos').doc(id).update({ [field]: field === 'nombre' ? value.toUpperCase() : Number(value) });
 
             if (view === 'login') return (
                 <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
-                    <h1 className="text-5xl font-black text-pink-600 mb-10 italic uppercase">Michoacana</h1>
+                    <h1 className="text-5xl font-black text-pink-600 mb-10 italic uppercase drop-shadow-md">Michoacana</h1>
                     <div className="grid grid-cols-2 gap-4 w-full max-w-md">
                         {employees.map(e => (
                             <button key={e.id} onClick={() => {
@@ -115,6 +114,12 @@
                     </div>
                 </div>
             );
+
+            // FILTRO DE BUSCADOR
+            const displayedProducts = products.filter(p => {
+                if(searchTerm) return p.nombre.toLowerCase().includes(searchTerm.toLowerCase());
+                return p.categoria === catActiva;
+            });
 
             return (
                 <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl relative overflow-hidden">
@@ -130,14 +135,23 @@
 
                     {view === 'pos' && (
                         <div className="flex flex-col flex-1 overflow-hidden">
+                            {/* BUSCADOR AÑADIDO */}
+                            <div className="bg-slate-50 px-4 py-3 border-b">
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 text-lg">🔍</span>
+                                    <input type="text" placeholder="Buscar sabor rápido..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} 
+                                    className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-transparent focus:border-pink-300 outline-none font-black text-slate-700 shadow-sm bg-white" />
+                                </div>
+                            </div>
+                            
                             <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
                                 {categories.map(cat => (
-                                    <button key={cat} onClick={() => cat === 'Venta Libre' ? agregarLibre() : setCatActiva(cat)} 
-                                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap ${catActiva === cat ? 'bg-pink-600 text-white' : 'bg-white text-gray-400'}`}>{cat === 'Venta Libre' ? '+ Libre' : cat}</button>
+                                    <button key={cat} onClick={() => {if(cat === 'Venta Libre') agregarLibre(); else {setCatActiva(cat); setSearchTerm('');}}} 
+                                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap ${catActiva === cat && !searchTerm ? 'bg-pink-600 text-white shadow-md' : 'bg-white text-gray-400'}`}>{cat === 'Venta Libre' ? '+ Libre' : cat}</button>
                                 ))}
                             </div>
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-24 scroll-hide">
-                                {products.filter(p => p.categoria === catActiva).map(p => (
+                                {displayedProducts.map(p => (
                                     <button key={p.id} disabled={p.stock <= 0} onClick={() => {
                                         setCart(prev => {
                                             const ex = prev.find(i => i.id === p.id);
@@ -145,24 +159,26 @@
                                             return [...prev, {...p, qty: 1}];
                                         });
                                         setShowCart(true);
-                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-2 border-transparent active:border-pink-500 transition-all">
-                                        <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1 truncate">{p.nombre}</p>
+                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all hover:shadow-md">
+                                        <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p>
                                         <p className="text-pink-600 font-black text-xl">${p.precio}</p>
+                                        {searchTerm && <p className="text-[8px] text-slate-400 font-bold uppercase mt-1">{p.categoria}</p>}
                                         <div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock <= 10 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-300'}`}>{p.stock}</div>
                                     </button>
                                 ))}
+                                {displayedProducts.length === 0 && <p className="col-span-2 text-center text-slate-400 font-black mt-10 uppercase text-xs">No se encontró el producto</p>}
                             </div>
 
                             <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_40px_rgba(0,0,0,0.2)] z-40 flex flex-col max-h-[85vh] ${!showCart ? 'cart-hidden' : ''}`}>
-                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase">CARRITO ({cart.length})</span></button>
+                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">CARRITO ({cart.length})</span></button>
                                 <div className="p-5 overflow-y-auto flex-1">
                                     {cart.map(item => (
                                         <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-3 rounded-2xl border">
                                             <div className="flex-1 pr-2"><p className="font-black text-xs uppercase text-slate-700 leading-tight">{item.nombre}</p><p className="text-pink-500 font-bold text-[10px]">${item.precio} c/u</p></div>
                                             <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl border shadow-sm">
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400">-</button>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400 text-lg">-</button>
                                                 <span className="font-black text-sm">{item.qty}</span>
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400">+</button>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400 text-lg">+</button>
                                             </div>
                                             <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="ml-3 text-red-200">✕</button>
                                         </div>
@@ -171,16 +187,13 @@
                                         <div className="flex justify-between items-center">
                                             {(user.rol === 'admin' || user.rol === 'encargado') ? (
                                                 <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2 rounded-xl font-black text-[10px] uppercase text-pink-600 border shadow-sm outline-none">
-                                                    <option value="Venta">💰 Venta Normal</option>
-                                                    <option value="Merma">🚫 Merma (Dañado)</option>
-                                                    <option value="Consumo">🍦 Consumo Propio</option>
+                                                    <option value="Venta">💰 Venta Normal</option><option value="Merma">🚫 Merma/Dañado</option><option value="Consumo">🍦 Consumo</option>
                                                 </select>
                                             ) : <span className="font-black text-[10px] uppercase text-slate-400 ml-2">Venta Directa</span>}
-
                                             {tipoVenta === 'Venta' && (
                                                 <div className="flex gap-1">
                                                     {[0, 10, 30].map(pct => (
-                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[10px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
+                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-3 py-2 rounded-xl font-black text-[10px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
                                                     ))}
                                                 </div>
                                             )}
@@ -206,7 +219,6 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-                            {/* GESTION DE CATEGORIAS */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
                                 <div className="flex flex-wrap gap-2">
@@ -214,41 +226,32 @@
                                         <div key={idx} className="bg-slate-50 px-3 py-2 rounded-2xl flex items-center gap-2 border">
                                             <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
                                             {cat !== 'Venta Libre' && (
-                                                <>
-                                                    <button onClick={()=>{
-                                                        const nuevo = prompt("Nuevo nombre:", cat);
-                                                        if(nuevo){ const c = [...categories]; c[idx] = nuevo.trim(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
-                                                    }} className="text-blue-500 text-xs ml-2">✏️</button>
-                                                    <button onClick={()=>{
-                                                        if(confirm("¿Borrar apartado?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
-                                                    }} className="text-red-300 text-xs ml-1">✕</button>
-                                                </>
+                                                <div className="flex gap-1 ml-2">
+                                                    <button onClick={()=>{const n = prompt("Nuevo nombre:", cat); if(n){ const c = [...categories]; c[idx] = n.trim(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-blue-500 font-bold text-xs bg-blue-50 px-2 rounded-lg">EDIT</button>
+                                                    <button onClick={()=>{if(confirm("¿Borrar?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
-                                    <button onClick={()=>{
-                                        const n = prompt("Nombre del nuevo apartado:");
-                                        if(n){ const c = [...categories, n.trim()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
-                                    }} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-3 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
+                                    <button onClick={()=>{const n = prompt("Nueva categoría:"); if(n){ const c = [...categories, n.trim()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-4 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
                                 </div>
                             </div>
 
-                            {/* GESTION DE EMPLEADOS */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal</h2>
                                 {employees.map(e => (
                                     <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border mb-2">
-                                        <input className="font-black uppercase text-xs bg-transparent w-full outline-none focus:text-pink-500" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                        <input className="font-black uppercase text-xs bg-transparent flex-1 outline-none focus:text-pink-500" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex items-center gap-2">
-                                            <input className="w-14 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                            <button onClick={() => confirm("¿Borrar?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 ml-2">✕</button>
+                                            <span className="text-[8px] font-black text-slate-400">PIN:</span>
+                                            <input className="w-12 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                            <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 ml-1 font-black">✕</button>
                                         </div>
                                     </div>
                                 ))}
-                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
                             </div>
 
-                            {/* GESTION DE INVENTARIO */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
@@ -270,18 +273,7 @@
                                         </div>
                                     </div>
                                 ))}
-                                <button onClick={handleAddProduct} className="w-full py-3 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-500 rounded-2xl font-black text-[10px] uppercase tracking-widest">+ Añadir a {catActiva}</button>
-                            </div>
-
-                            {/* CORTES */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">📑 Archivo de Cortes</h2>
-                                {cortes.map(c => (
-                                    <div key={c.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 text-[10px]">
-                                        <div className="flex justify-between font-black uppercase mb-1"><span>{c.fecha} - {c.responsable}</span><span className="text-green-600">${c.total}</span></div>
-                                        <p className="text-slate-400 font-bold uppercase">{Object.entries(c.detalle_productos || {}).map(([k,v])=>`${k} x${v}`).join(', ')}</p>
-                                    </div>
-                                ))}
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("Precio:"); const s=prompt("Stock:"); if(n&&p&&s) db.collection('productos').add({nombre:n.toUpperCase(), precio:Number(p), stock:Number(s), categoria:catActiva})}} className="w-full py-3 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-500 rounded-2xl font-black text-[10px] uppercase tracking-widest">+ Añadir Sabor a {catActiva}</button>
                             </div>
                         </div>
                     )}
@@ -289,8 +281,8 @@
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
                             <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2">Total en Caja</p>
-                                <p className="text-7xl font-black tracking-tighter mb-4">${totalCajaActual}</p>
+                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Total en Caja</p>
+                                <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
                                 <button onClick={async () => {
                                     if(!confirm(`¿Hacer corte de caja por $${totalCajaActual}?`)) return;
                                     const resumen = {};
@@ -305,14 +297,40 @@
                                     await b.commit();
                                 }} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Hacer Corte 💰</button>
                             </div>
+
+                            {/* NUEVO: PANEL DE ESTADÍSTICAS RÁPIDAS */}
+                            {tickets.length > 0 && (
+                                <div className="grid grid-cols-3 gap-2 mb-6">
+                                    <div className="bg-white p-3 rounded-3xl shadow-sm border-b-4 border-yellow-400">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase leading-tight mb-1">Producto 🌟</p>
+                                        <p className="font-black text-xs text-slate-800 leading-none truncate">{topProd ? topProd[0] : '-'}</p>
+                                        <p className="text-[9px] text-yellow-500 font-bold mt-1">{topProd ? `${topProd[1]} pzas` : ''}</p>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-3xl shadow-sm border-b-4 border-green-400">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase leading-tight mb-1">Mejor Vend. 🥇</p>
+                                        <p className="font-black text-xs text-slate-800 leading-none truncate">{topEmp ? topEmp[0] : '-'}</p>
+                                        <p className="text-[9px] text-green-500 font-bold mt-1">{topEmp ? `$${topEmp[1]}` : ''}</p>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-3xl shadow-sm border-b-4 border-purple-400">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase leading-tight mb-1">Hora Pico ⏰</p>
+                                        <p className="font-black text-xs text-slate-800 leading-none">{topHour ? `${topHour[0]}:00` : '-'}</p>
+                                        <p className="text-[9px] text-purple-500 font-bold mt-1">{topHour ? `${topHour[1]} ventas` : ''}</p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="space-y-3 pb-20">
+                                <p className="font-black uppercase text-slate-400 text-[10px] ml-2 italic">Todos los tickets del turno ({tickets.length}):</p>
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
                                     <div key={t.id} className={`bg-white p-4 rounded-[25px] border-r-8 shadow-sm flex justify-between items-center ${t.tipo==='Venta'?'border-green-500':t.tipo==='Merma'?'border-red-400 opacity-70':'border-blue-400 opacity-70'}`}>
                                         <div className="flex-1 pr-2">
                                             <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor} {t.tipo !== 'Venta' && `(${t.tipo})`}</p>
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase leading-tight truncate">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase leading-tight mt-1">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
                                         </div>
-                                        <p className="text-2xl font-black">${t.total}</p>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-black">${t.total}</p>
+                                            {t.descuento > 0 && <p className="text-[8px] font-black text-pink-500 mt-1 uppercase">Desc {t.descuento}%</p>}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
