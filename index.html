@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Corte Detallado</title>
+    <title>Michoacana Pro - Blindado</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -16,9 +16,10 @@
         .cart-panel { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 40px 40px 0 0; }
         .cart-hidden { transform: translateY(calc(100% - 70px)); }
         input[type=number]::-webkit-inner-spin-button { display: none; }
+        .scroll-hide::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-slate-50 font-sans select-none text-slate-900">
+<body class="bg-slate-100 font-sans select-none text-slate-900">
     <div id="root"></div>
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -52,7 +53,7 @@
                 const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubEmps = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubTickets = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const unsubCortes = db.collection('cortes').orderBy('timestamp', 'desc').limit(15).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const unsubCortes = db.collection('cortes').orderBy('timestamp', 'desc').limit(10).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 return () => { unsubProds(); unsubEmps(); unsubTickets(); unsubCortes(); };
             }, [db]);
 
@@ -76,43 +77,38 @@
             };
 
             const hacerCorteCaja = async () => {
-                if(!confirm(`¿Hacer corte por $${totalCajaActual}? Se guardará el detalle de productos vendidos.`)) return;
-                
-                // Resumen de qué se vendió
+                if(!confirm(`¿Hacer corte de caja por $${totalCajaActual}?`)) return;
                 const resumenProd = {};
-                tickets.forEach(t => {
-                    t.items.forEach(item => {
-                        resumenProd[item.nombre] = (resumenProd[item.nombre] || 0) + item.qty;
-                    });
-                });
-
+                tickets.forEach(t => t.items.forEach(item => resumenProd[item.nombre] = (resumenProd[item.nombre] || 0) + item.qty));
                 const batch = db.batch();
                 batch.set(db.collection('cortes').doc(), {
-                    fecha: new Date().toLocaleDateString(),
-                    hora: new Date().toLocaleTimeString(),
-                    total: totalCajaActual,
-                    responsable: user.nombre,
-                    detalle_productos: resumenProd,
-                    cantidad_tickets: tickets.length,
+                    fecha: new Date().toLocaleDateString(), hora: new Date().toLocaleTimeString(),
+                    total: totalCajaActual, responsable: user.nombre, detalle_productos: resumenProd,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-
                 tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), { cortado: true }));
                 await batch.commit();
-                alert("Corte guardado con éxito.");
+            };
+
+            const agregarVentaLibre = () => {
+                const p = prompt("Precio:");
+                const n = prompt("Nombre:");
+                if(p && n) {
+                    setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1, categoria: 'Venta Libre'}]);
+                    setShowCart(true);
+                }
             };
 
             if (view === 'login') return (
-                <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
-                    <h1 className="text-5xl font-black text-pink-600 mb-10 italic uppercase text-center">Michoacana</h1>
+                <div className="flex flex-col items-center justify-center min-h-screen bg-pink-50 p-6">
+                    <h1 className="text-6xl font-black text-pink-600 mb-10 italic uppercase text-center drop-shadow-md">Michoacana</h1>
                     <div className="grid grid-cols-2 gap-4 w-full max-w-md">
                         {employees.map(e => (
                             <button key={e.id} onClick={() => {
                                 const p = prompt(`PIN para ${e.nombre}:`);
                                 if(p === e.pin) { setUser(e); setView('pos'); }
-                            }} className="bg-white p-6 rounded-[30px] shadow-lg font-black uppercase text-gray-700">
-                                {e.nombre}
-                                <p className="text-[10px] text-pink-400">{e.rol}</p>
+                            }} className="bg-white p-7 rounded-[35px] shadow-lg font-black uppercase text-gray-700 active:scale-95 transition-all">
+                                {e.nombre}<p className="text-[10px] text-pink-400 font-bold tracking-widest">{e.rol}</p>
                             </button>
                         ))}
                     </div>
@@ -121,24 +117,27 @@
 
             return (
                 <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl relative overflow-hidden">
-                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30">
-                        <span className="font-black italic uppercase text-xl">Michoacana</span>
-                        <div className="flex gap-4">
-                            <button onClick={() => setView('pos')} className="text-2xl">🛒</button>
-                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => setView('history')} className="text-2xl">📊</button>}
-                            {user.rol === 'admin' && <button onClick={() => setView('admin')} className="text-2xl">📦</button>}
-                            <button onClick={() => {setUser(null); setView('login');}} className="bg-pink-900 px-3 py-1 rounded-full text-[10px] font-black uppercase">Salir</button>
+                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30 shadow-md">
+                        <span className="font-black italic uppercase text-lg tracking-tighter">Terminal de Punto de Venta</span>
+                        <div className="flex gap-5">
+                            <button onClick={() => setView('pos')} className="text-2xl active:scale-125 transition-transform">🛒</button>
+                            {user.rol === 'admin' && <button onClick={() => setView('history')} className="text-2xl active:scale-125 transition-transform">📊</button>}
+                            {user.rol === 'admin' && <button onClick={() => setView('admin')} className="text-2xl active:scale-125 transition-transform">📦</button>}
+                            <button onClick={() => {setUser(null); setView('login');}} className="bg-pink-900 px-4 py-1.5 rounded-full text-[10px] font-black uppercase">Cerrar Sesión</button>
                         </div>
                     </nav>
 
                     {view === 'pos' && (
                         <div className="flex flex-col flex-1 overflow-hidden">
-                            <div className="bg-slate-100 flex overflow-x-auto p-2 gap-2 border-b">
+                            <div className="bg-slate-100 flex overflow-x-auto p-2 gap-2 border-b scroll-hide">
                                 {categories.map(cat => (
-                                    <button key={cat} onClick={() => setCatActiva(cat)} className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap ${catActiva === cat ? 'bg-pink-600 text-white' : 'bg-white text-gray-400'}`}>{cat}</button>
+                                    <button key={cat} onClick={() => cat === 'Venta Libre' ? agregarVentaLibre() : setCatActiva(cat)} 
+                                    className={`px-5 py-3 rounded-2xl font-black text-[10px] uppercase whitespace-nowrap transition-all ${catActiva === cat ? 'bg-pink-600 text-white shadow-md' : 'bg-white text-gray-400'}`}>
+                                        {cat === 'Venta Libre' ? '+ Libre' : cat}
+                                    </button>
                                 ))}
                             </div>
-                            <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-24">
+                            <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-28 scroll-hide">
                                 {products.filter(p => p.categoria === catActiva).map(p => (
                                     <button key={p.id} disabled={p.stock <= 0} onClick={() => {
                                         setCart(prev => {
@@ -147,36 +146,64 @@
                                             return [...prev, {...p, qty: 1}];
                                         });
                                         setShowCart(true);
-                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-2 border-transparent active:border-pink-500">
-                                        <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p>
-                                        <p className="text-pink-600 font-black text-xl">${p.precio}</p>
+                                    }} className="p-5 rounded-[30px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all">
+                                        <p className="font-black text-gray-900 uppercase text-[11px] leading-tight mb-1 truncate">{p.nombre}</p>
+                                        <p className="text-pink-600 font-black text-2xl">${p.precio}</p>
                                         <div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock <= 10 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-300'}`}>{p.stock}</div>
                                     </button>
                                 ))}
                             </div>
 
-                            <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_40px_rgba(0,0,0,0.2)] z-40 flex flex-col max-h-[85vh] ${!showCart ? 'cart-hidden' : ''}`}>
-                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase">CARRITO</span></button>
-                                <div className="p-5 overflow-y-auto flex-1">
+                            <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-20px_60px_rgba(0,0,0,0.3)] z-40 flex flex-col max-h-[90vh] ${!showCart ? 'cart-hidden' : ''}`}>
+                                <button onClick={() => setShowCart(!showCart)} className="w-full py-4 flex flex-col items-center"><div className="w-14 h-2 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">RESUMEN DE VENTA</span></button>
+                                <div className="p-6 overflow-y-auto flex-1 bg-white">
                                     {cart.map(item => (
-                                        <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-3 rounded-2xl">
-                                            <div className="flex-1"><p className="font-black text-xs uppercase">{item.nombre}</p><p className="text-pink-500 font-bold text-[10px]">${item.precio}</p></div>
-                                            <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl border">
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400">-</button>
-                                                <span className="font-black text-sm">{item.qty}</span>
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400">+</button>
+                                        <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                                            <div className="flex-1"><p className="font-black text-sm uppercase text-slate-700">{item.nombre}</p><p className="text-pink-500 font-bold text-xs">${item.precio} c/u</p></div>
+                                            <div className="flex items-center gap-4 bg-white px-3 py-1.5 rounded-2xl border shadow-sm">
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400 text-xl">-</button>
+                                                <span className="font-black text-lg">{item.qty}</span>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400 text-xl">+</button>
                                             </div>
+                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="ml-4 text-red-200 text-xl">✕</button>
                                         </div>
                                     ))}
-                                    <div className="mt-2 p-4 bg-slate-100 rounded-[30px] space-y-4">
-                                        <div className="flex justify-between items-end"><div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase">Total</span><span className="text-5xl font-black text-slate-800">${totalFinal}</span></div></div>
+                                    
+                                    <div className="mt-4 p-6 bg-slate-100 rounded-[40px] space-y-5">
+                                        <div className="flex justify-between items-center">
+                                            <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-4 py-2.5 rounded-2xl font-black text-[11px] uppercase text-pink-600 border shadow-sm outline-none">
+                                                <option value="Venta">💰 Venta Normal</option>
+                                                {user.rol === 'admin' && <option value="Merma">🚫 Merma/Dañado</option>}
+                                                {user.rol === 'admin' && <option value="Consumo">🍦 Consumo Propio</option>}
+                                            </select>
+                                            
+                                            {tipoVenta === 'Venta' && (
+                                                <div className="flex gap-1.5">
+                                                    {[0, 10, 30].map(pct => (
+                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[11px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex justify-between items-end border-b-2 border-slate-200 pb-4">
+                                            <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase mb-1">Total a Cobrar</span><span className="text-6xl font-black text-slate-800 tracking-tighter">${totalFinal}</span></div>
+                                            {discountPct > 0 && <span className="text-[10px] font-black text-pink-500 uppercase bg-pink-50 px-2 py-1 rounded-lg mb-2">Ahorro: ${subtotal - totalFinal}</span>}
+                                        </div>
+
                                         {tipoVenta==='Venta' && (
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="Pagó con..." className="p-3 bg-white rounded-xl font-black text-xl outline-none border-2 border-transparent focus:border-pink-300" />
-                                                <div className={`p-3 rounded-xl font-black text-xl flex items-center justify-center ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '...'}</div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Pagó con:</label>
+                                                    <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Cambio:</label>
+                                                    <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div>
+                                                </div>
                                             </div>
                                         )}
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-4 rounded-2xl bg-pink-600 text-white font-black text-2xl uppercase">Cobrar</button>
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-6 rounded-3xl bg-pink-600 text-white font-black text-3xl uppercase shadow-xl active:scale-95 transition-all">TERMINAR VENTA ✅</button>
                                     </div>
                                 </div>
                             </div>
@@ -184,59 +211,35 @@
                     )}
 
                     {view === 'admin' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10">
-                            {/* HISTORIAL DE CORTES CON DETALLE */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4 tracking-tighter">📑 Historial de Cortes Detallados</h2>
-                                <div className="space-y-4">
-                                    {cortes.map(c => (
-                                        <div key={c.id} className="p-4 bg-slate-50 rounded-2xl border-l-4 border-pink-500 shadow-sm">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <p className="font-black text-xs uppercase">{c.fecha} - {c.hora}</p>
-                                                    <p className="text-[9px] text-slate-400 font-bold uppercase">Hecho por: {c.responsable}</p>
-                                                </div>
-                                                <p className="text-2xl font-black text-green-600">${c.total}</p>
-                                            </div>
-                                            <div className="bg-white p-3 rounded-xl border border-slate-100">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase mb-1 border-b pb-1">Productos Vendidos:</p>
-                                                {c.detalle_productos && Object.entries(c.detalle_productos).map(([nom, cant]) => (
-                                                    <div key={nom} className="flex justify-between text-[10px] font-bold py-0.5 border-b border-slate-50 last:border-0">
-                                                        <span className="uppercase">{nom}</span>
-                                                        <span className="text-pink-600">x{cant}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
+                            <div className="bg-white p-7 rounded-[40px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-5 text-xl tracking-tighter">📑 Cortes Guardados</h2>
+                                {cortes.map(c => (
+                                    <div key={c.id} className="p-5 bg-slate-50 rounded-[30px] border-l-[10px] border-pink-500 mb-4">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div><p className="font-black text-xs uppercase text-slate-600">{c.fecha} - {c.hora}</p><p className="text-[10px] text-slate-400 font-bold">Por: {c.responsable}</p></div>
+                                            <p className="text-3xl font-black text-green-600">${c.total}</p>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* GESTIÓN DE PERSONAL */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4">👥 Personal (Nombre y PIN)</h2>
-                                {employees.map(e => (
-                                    <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border mb-2">
-                                        <input className="font-black uppercase text-sm bg-transparent w-full outline-none" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
-                                        <input className="w-16 p-1 text-center font-black bg-white border rounded-lg text-xs ml-2" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                        <button onClick={() => confirm("¿Eliminar?") && db.collection('empleados').doc(e.id).delete()} className="ml-2 text-red-300">✕</button>
+                                        <div className="bg-white p-3 rounded-2xl border border-slate-100 space-y-1 text-[11px] font-bold uppercase text-slate-500">
+                                            {c.detalle_productos && Object.entries(c.detalle_productos).map(([n, q]) => (
+                                                <div key={n} className="flex justify-between border-b border-slate-50 last:border-0 py-1"><span>{n}</span><span className="text-pink-600">x{q}</span></div>
+                                            ))}
+                                        </div>
                                     </div>
                                 ))}
-                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-xs">+ NUEVO EMPLEADO</button>
                             </div>
 
-                            {/* GESTIÓN DE PRODUCTOS */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4">🍦 Inventario</h2>
+                            <div className="bg-white p-7 rounded-[40px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-5 text-xl tracking-tighter">🍦 Gestión de Inventario</h2>
                                 {products.map(p => (
-                                    <div key={p.id} className="p-3 bg-slate-50 rounded-2xl border mb-3">
-                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-pink-100" defaultValue={p.nombre} onBlur={(x)=>db.collection('productos').doc(p.id).update({nombre: x.target.value.toUpperCase()})} />
+                                    <div key={p.id} className="p-4 bg-slate-50 rounded-[30px] border mb-4">
+                                        <input className="font-black uppercase text-sm bg-transparent w-full mb-3 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>db.collection('productos').doc(p.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex justify-between items-center">
-                                            <div className="flex gap-2">
-                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400">STOCK</p><input type="number" className="w-12 p-1 text-center font-black bg-white border rounded-lg text-xs" defaultValue={p.stock} onBlur={(x)=>db.collection('productos').doc(p.id).update({stock: Number(x.target.value)})} /></div>
-                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400">PRECIO</p><input type="number" className="w-12 p-1 text-center font-black bg-white border rounded-lg text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>db.collection('productos').doc(p.id).update({precio: Number(x.target.value)})} /></div>
+                                            <div className="flex gap-3">
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>db.collection('productos').doc(p.id).update({stock: Number(x.target.value)})} /></div>
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase">Precio</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>db.collection('productos').doc(p.id).update({precio: Number(x.target.value)})} /></div>
                                             </div>
-                                            <button onClick={() => confirm("¿Borrar?") && db.collection('productos').doc(p.id).delete()} className="text-red-200">✕</button>
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('productos').doc(p.id).delete()} className="text-red-200 font-black text-xl">✕</button>
                                         </div>
                                     </div>
                                 ))}
@@ -245,22 +248,23 @@
                     )}
 
                     {view === 'history' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100">
-                            <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2">Total en Caja Ahora</p>
-                                <p className="text-7xl font-black tracking-tighter mb-4">${totalCajaActual}</p>
-                                {user.rol === 'admin' && <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95">Realizar Corte del Día 💰</button>}
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
+                            <div className="bg-pink-600 p-10 rounded-[50px] mb-8 text-white text-center shadow-2xl">
+                                <p className="text-[10px] font-black opacity-70 uppercase mb-2">Dinero en Caja</p>
+                                <p className="text-8xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
+                                <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-8 py-4 rounded-3xl font-black text-xs uppercase shadow-xl active:scale-95 transition-all">Realizar Corte de Caja 💰</button>
                             </div>
-                            <div className="space-y-3 pb-20">
-                                <p className="font-black uppercase text-slate-400 text-[10px] ml-4">Ventas sin cortar ({tickets.length}):</p>
+                            <div className="space-y-4 pb-24">
+                                <p className="font-black uppercase text-slate-400 text-[10px] ml-5 tracking-widest italic">Ventas del Turno:</p>
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className={`bg-white p-4 rounded-[25px] border-r-8 shadow-sm ${t.tipo==='Venta'?'border-green-500':'border-orange-400'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor}</p>
-                                                <p className="text-[9px] text-slate-400 font-bold uppercase italic">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
-                                            </div>
-                                            <p className="text-2xl font-black">${t.total}</p>
+                                    <div key={t.id} className="bg-white p-6 rounded-[35px] border-r-[12px] border-green-500 shadow-sm flex justify-between items-center">
+                                        <div className="flex-1 pr-2">
+                                            <div className="flex items-center gap-2 mb-1"><span className="font-black text-[12px] uppercase">{t.hora}</span><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold">{t.vendedor}</span></div>
+                                            <p className="text-[10px] text-slate-400 font-bold uppercase italic leading-tight">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-3xl font-black tracking-tighter">${t.total}</p>
+                                            {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase tracking-tighter">-{t.descuento}%</p>}
                                         </div>
                                     </div>
                                 ))}
