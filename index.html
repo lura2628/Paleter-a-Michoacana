@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>POS Michoacana</title>
+    <title>POS Michoacana Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -11,7 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
 </head>
-<body class="bg-slate-50 font-sans">
+<body class="bg-slate-100 font-sans select-none">
     <div id="root"></div>
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -25,23 +25,25 @@
             const [tickets, setTickets] = useState([]);
             const [cart, setCart] = useState([]);
             const [discountPct, setDiscountPct] = useState(0);
+            const [catActiva, setCatActiva] = useState('Paletas');
+
+            const categorias = ['Paletas', 'Nieve', 'Trolly', 'Extras', 'Otros'];
 
             const configGuardada = localStorage.getItem('fb_config');
 
             if (!configGuardada) {
                 return (
-                    <div className="flex items-center justify-center min-h-screen bg-pink-50 p-6">
-                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-4 border-pink-500 text-center">
+                    <div className="flex items-center justify-center min-h-screen bg-pink-50 p-6 text-center">
+                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-4 border-pink-500">
                             <h2 className="text-2xl font-black mb-2 text-pink-600 uppercase italic">Configuración</h2>
-                            <p className="text-xs text-gray-500 mb-4">Pega aquí el código de las llaves { }</p>
-                            <textarea id="cuadro_llaves" className="w-full h-48 p-4 border rounded-2xl mb-4 font-mono text-[10px] bg-gray-50 shadow-inner" placeholder='{ "apiKey": "..." }'></textarea>
+                            <textarea id="cuadro_llaves" className="w-full h-48 p-4 border rounded-2xl mb-4 font-mono text-[10px] bg-gray-50" placeholder='Pega las llaves aquí...'></textarea>
                             <button onClick={() => {
                                 const texto = document.getElementById('cuadro_llaves').value;
                                 if(texto.includes("apiKey")) {
                                     localStorage.setItem('fb_config', texto);
                                     window.location.reload();
-                                } else { alert("Código incompleto"); }
-                            }} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black shadow-lg">ACTIVAR SISTEMA</button>
+                                }
+                            }} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black uppercase text-xl">ACTIVAR</button>
                         </div>
                     </div>
                 );
@@ -75,30 +77,36 @@
                 return () => { unsubProds(); unsubEmps(); unsubTickets(); };
             }, [db]);
 
+            const subtotal = cart.reduce((a, b) => a + (b.precio * b.qty), 0);
+            // REDONDEO: Usamos Math.round para que 17.50 suba a 18
+            const totalFinal = Math.round(subtotal * (1 - discountPct / 100));
+
             const finalizarVenta = async () => {
-                const subtotal = cart.reduce((a, b) => a + (b.precio * b.qty), 0);
-                const total = subtotal * (1 - discountPct / 100);
                 const batch = db.batch();
                 const tRef = db.collection('tickets').doc();
                 batch.set(tRef, {
-                    vendedor: user.nombre, items: cart, total, descuento_pct: discountPct,
+                    vendedor: user.nombre, items: cart, total: totalFinal, descuento_pct: discountPct,
                     hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                cart.forEach(item => batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) }));
+                cart.forEach(item => {
+                    if(item.id !== 'extra') { // No descontar stock si es un extra genérico
+                        batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) });
+                    }
+                });
                 await batch.commit();
-                alert("Venta Guardada"); setCart([]); setDiscountPct(0);
+                alert("Venta Guardada: $" + totalFinal); setCart([]); setDiscountPct(0);
             };
 
             if (view === 'login') return (
                 <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-pink-50 text-center">
-                    <h1 className="text-4xl font-black text-pink-600 mb-10 italic uppercase">Michoacana</h1>
+                    <h1 className="text-5xl font-black text-pink-600 mb-10 italic uppercase tracking-tighter shadow-sm">Michoacana</h1>
                     <div className="grid grid-cols-2 gap-4 w-full max-w-md">
                         {employees.map(e => (
                             <button key={e.id} onClick={() => {
                                 const p = prompt(`PIN para ${e.nombre}:`);
                                 if(p === e.pin) { setUser(e); setView('pos'); }
-                            }} className="bg-white p-8 rounded-3xl shadow-sm border-b-4 border-pink-200 font-bold uppercase">
+                            }} className="bg-white p-6 rounded-3xl shadow-md border-b-4 border-pink-200 font-bold uppercase text-gray-700 active:scale-95 transition-all text-lg">
                                 {e.nombre}
                             </button>
                         ))}
@@ -107,97 +115,141 @@
             );
 
             return (
-                <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl">
-                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center">
-                        <span className="font-black italic uppercase">Michoacana</span>
-                        <div className="flex gap-4">
+                <div className="flex flex-col h-screen max-w-6xl mx-auto bg-white shadow-2xl overflow-hidden">
+                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center shadow-lg z-20">
+                        <span className="font-black italic uppercase text-2xl tracking-tighter">Michoacana</span>
+                        <div className="flex gap-6 items-center">
                             {user.rol === 'admin' && (
-                                <div className="flex gap-2">
+                                <div className="flex gap-8 text-3xl">
                                     <button onClick={() => setView('pos')}>🛒</button>
                                     <button onClick={() => setView('admin')}>📦</button>
                                     <button onClick={() => setView('history')}>📊</button>
                                 </div>
                             )}
-                            <button onClick={() => {setUser(null); setView('login');}}>🚪</button>
+                            <button onClick={() => {setUser(null); setView('login');}} className="text-2xl bg-pink-700 p-2 rounded-full px-4">🚪</button>
                         </div>
                     </nav>
 
                     {view === 'pos' && (
                         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-                            <div className="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto content-start bg-slate-50">
-                                {products.map(p => (
+                            {/* CATEGORÍAS LATERALES / SUPERIORES */}
+                            <div className="bg-slate-100 flex md:flex-col overflow-x-auto md:w-24 p-2 gap-2 border-r">
+                                {categorias.map(cat => (
+                                    <button key={cat} onClick={() => setCatActiva(cat)} className={`flex-1 md:flex-none py-3 px-2 rounded-2xl font-black text-[10px] uppercase transition-all ${catActiva === cat ? 'bg-pink-600 text-white shadow-lg scale-105' : 'bg-white text-gray-400'}`}>
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto content-start bg-slate-50">
+                                {products.filter(p => p.categoria === catActiva).map(p => (
                                     <button key={p.id} disabled={p.stock <= 0} onClick={() => {
                                         setCart(prev => {
                                             const ex = prev.find(i => i.id === p.id);
                                             if(ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty+1} : i);
                                             return [...prev, {...p, qty: 1}];
                                         });
-                                    }} className={`p-4 rounded-3xl shadow-sm bg-white border ${p.stock <= 0 ? 'opacity-20' : ''}`}>
-                                        <p className="font-bold text-sm leading-none mb-1">{p.nombre}</p>
-                                        <p className="text-pink-600 font-black">${p.precio}</p>
-                                        <p className="text-[10px] text-gray-400 font-bold">Stock: {p.stock}</p>
+                                    }} className={`p-4 rounded-3xl shadow-sm bg-white border-2 border-transparent active:border-pink-400 relative ${p.stock <= 0 ? 'opacity-30' : ''}`}>
+                                        <p className="font-bold text-sm mb-1 leading-tight text-gray-800">{p.nombre}</p>
+                                        <p className="text-pink-600 font-black text-xl">${p.precio}</p>
+                                        <div className="absolute top-2 right-2 bg-slate-100 px-2 py-0.5 rounded-full text-[9px] font-bold text-gray-500">S:{p.stock}</div>
                                     </button>
                                 ))}
                             </div>
-                            <div className="w-full md:w-80 bg-white border-l p-5 flex flex-col">
-                                <h2 className="font-black text-xs text-slate-400 uppercase mb-4 text-center">Carrito</h2>
+                            
+                            <div className="w-full md:w-80 bg-white border-l p-5 flex flex-col shadow-2xl z-10">
+                                <h2 className="font-black text-xs text-slate-400 uppercase mb-4 text-center tracking-widest">Ticket Actual</h2>
                                 <div className="flex-1 overflow-y-auto">
                                     {cart.map(item => (
-                                        <div key={item.id} className="flex justify-between text-sm mb-2 border-b pb-1">
-                                            <span>{item.nombre} x{item.qty}</span>
-                                            <span className="font-bold text-pink-600">${item.precio * item.qty}</span>
+                                        <div key={item.id} className="flex justify-between items-center mb-3 border-b pb-3 border-slate-50">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-gray-800 leading-none text-sm">{item.nombre}</span>
+                                                <span className="text-xs text-pink-500 font-bold">x{item.qty} - ${item.precio * item.qty}</span>
+                                            </div>
+                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="bg-red-50 text-red-500 w-10 h-10 rounded-2xl font-black flex items-center justify-center text-xl">✕</button>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="pt-4 border-t">
+                                <div className="pt-4 border-t border-slate-100">
                                     {user.canDiscount && (
                                         <div className="flex gap-1 mb-4">
-                                            {[10, 20, 30].map(pct => (
-                                                <button key={pct} onClick={() => setDiscountPct(pct)} className={`flex-1 py-1 rounded-lg text-xs font-bold border ${discountPct===pct?'bg-pink-600 text-white':'text-pink-600 border-pink-100'}`}>-{pct}%</button>
+                                            {[0, 10, 20, 30].map(pct => (
+                                                <button key={pct} onClick={() => setDiscountPct(pct)} className={`flex-1 py-2 rounded-xl text-xs font-black border ${discountPct===pct?'bg-pink-600 text-white shadow-md':'text-pink-600 border-pink-100'}`}>{pct === 0 ? 'Sin %' : `-${pct}%`}</button>
                                             ))}
                                         </div>
                                     )}
-                                    <div className="flex justify-between font-black text-2xl mb-4">
+                                    <div className="flex justify-between font-black text-3xl mb-4 text-gray-800 tracking-tighter">
                                         <span>TOTAL</span>
-                                        <span>${(cart.reduce((a,b)=>a+(b.precio*b.qty), 0) * (1 - discountPct/100)).toFixed(0)}</span>
+                                        <span className="text-pink-600">${totalFinal}</span>
                                     </div>
-                                    <button onClick={finalizarVenta} disabled={cart.length===0} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-pink-100 uppercase">COBRAR</button>
+                                    <button onClick={finalizarVenta} disabled={cart.length===0} className="w-full bg-pink-600 text-white py-5 rounded-3xl font-black shadow-lg shadow-pink-200 uppercase text-2xl active:scale-95 transition-all">COBRAR</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {view === 'admin' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-50 space-y-6">
-                            <div className="flex justify-between items-center">
-                                <h2 className="text-2xl font-black uppercase italic">Inventario</h2>
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-6">
+                            <div className="flex flex-col gap-4 bg-white p-6 rounded-[32px] shadow-sm border border-pink-100">
+                                <h2 className="text-2xl font-black uppercase italic text-pink-600">Nuevo Producto</h2>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input id="new-name" placeholder="Nombre" className="p-3 border rounded-xl text-sm outline-pink-500" />
+                                    <input id="new-price" type="number" placeholder="Precio $" className="p-3 border rounded-xl text-sm outline-pink-500" />
+                                    <input id="new-stock" type="number" placeholder="Stock" className="p-3 border rounded-xl text-sm outline-pink-500" />
+                                    <select id="new-cat" className="p-3 border rounded-xl text-sm bg-white">
+                                        {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
                                 <button onClick={() => {
-                                    const n = prompt("Nombre:"); const p = prompt("Precio:"); const s = prompt("Stock:");
-                                    if(n && p) db.collection('productos').add({nombre: n, precio: Number(p), stock: Number(s)});
-                                }} className="bg-green-500 text-white px-4 py-2 rounded-xl font-bold">+ Nuevo</button>
+                                    const n = document.getElementById('new-name').value;
+                                    const p = document.getElementById('new-price').value;
+                                    const s = document.getElementById('new-stock').value;
+                                    const c = document.getElementById('new-cat').value;
+                                    if(n && p) {
+                                        db.collection('productos').add({nombre: n, precio: Number(p), stock: Number(s), categoria: c});
+                                        document.getElementById('new-name').value = '';
+                                        document.getElementById('new-price').value = '';
+                                    }
+                                }} className="bg-green-500 text-white py-4 rounded-2xl font-black shadow-lg uppercase">Guardar en Inventario</button>
                             </div>
-                            <div className="grid gap-3">
-                                {products.map(p => (
-                                    <div key={p.id} className="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border border-pink-50">
-                                        <div className="flex-1"><p className="font-bold text-sm">{p.nombre}</p><p className="text-pink-600 font-black text-lg">$ {p.precio}</p></div>
-                                        <div className="flex items-center gap-2">
-                                            <input type="number" className="w-16 border rounded-lg p-2 text-center text-sm font-bold" defaultValue={p.stock} onBlur={(e) => db.collection('productos').doc(p.id).update({stock: Number(e.target.value)})} />
-                                            <button onClick={() => {if(confirm("¿Borrar?")) db.collection('productos').doc(p.id).delete()}} className="text-red-300 text-xl">🗑️</button>
+
+                            <div className="space-y-3">
+                                <h3 className="font-black text-gray-400 uppercase text-xs tracking-widest">Lista de Productos</h3>
+                                {products.sort((a,b) => a.categoria.localeCompare(b.categoria)).map(p => (
+                                    <div key={p.id} className="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border-l-8 border-pink-400">
+                                        <div className="flex-1">
+                                            <p className="text-[10px] font-black text-pink-400 uppercase">{p.categoria}</p>
+                                            <p className="font-bold text-gray-800 leading-none mb-1">{p.nombre}</p>
+                                            <p className="text-pink-600 font-black">$ {p.precio}</p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-center">
+                                                <p className="text-[8px] font-bold text-gray-400">STOCK</p>
+                                                <input type="number" className="w-14 border rounded-lg p-1 text-center font-bold" defaultValue={p.stock} onBlur={(e) => db.collection('productos').doc(p.id).update({stock: Number(e.target.value)})} />
+                                            </div>
+                                            <button onClick={() => {if(confirm("¿Borrar?")) db.collection('productos').doc(p.id).delete()}} className="text-red-200 text-2xl px-2">🗑️</button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
+
                             <div className="border-t pt-8">
-                                <h2 className="text-xl font-black uppercase text-slate-400 mb-4">Empleados</h2>
+                                <h2 className="text-2xl font-black uppercase italic text-slate-800 mb-4">Empleados</h2>
                                 <button onClick={() => {
-                                    const n = prompt("Nombre:"); const pin = prompt("PIN:"); const d = confirm("¿Puede dar descuento?");
-                                    if(n && pin) db.collection('empleados').add({nombre: n, pin, rol: 'ventas', canDiscount: d});
-                                }} className="bg-slate-800 text-white px-4 py-2 rounded-xl text-xs mb-4 font-bold">+ Nuevo Empleado</button>
-                                <div className="space-y-2">
+                                    const n = prompt("Nombre:"); const pin = prompt("PIN:");
+                                    if(n && pin) db.collection('empleados').add({nombre: n, pin, rol: 'ventas', canDiscount: true});
+                                }} className="bg-slate-800 text-white px-6 py-3 rounded-2xl text-xs mb-6 font-black uppercase">+ Contratar</button>
+                                <div className="grid gap-3">
                                     {employees.map(e => (
-                                        <div key={e.id} className="bg-white p-3 rounded-xl flex justify-between items-center text-sm shadow-sm border border-slate-100">
-                                            <span className="font-bold">{e.nombre} <span className="text-gray-400 font-normal ml-2">PIN: {e.pin}</span></span>
-                                            <button onClick={() => {if(confirm("¿Borrar?")) db.collection('empleados').doc(e.id).delete()}} className="text-red-300 text-lg">❌</button>
+                                        <div key={e.id} className="bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm">
+                                            <div>
+                                                <p className="font-black text-gray-800 uppercase">{e.nombre}</p>
+                                                <button onClick={() => {
+                                                    const nuevoPin = prompt("Nuevo PIN para " + e.nombre);
+                                                    if(nuevoPin) db.collection('empleados').doc(e.id).update({pin: nuevoPin});
+                                                }} className="text-xs text-blue-500 font-bold underline">Cambiar PIN: {e.pin}</button>
+                                            </div>
+                                            <button onClick={() => {if(confirm("¿Despedir?")) db.collection('employees').doc(e.id).delete()}} className="text-red-200 text-xl">✕</button>
                                         </div>
                                     ))}
                                 </div>
@@ -206,16 +258,20 @@
                     )}
 
                     {view === 'history' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-50">
-                            <div className="bg-pink-600 p-8 rounded-3xl mb-8 text-white shadow-xl shadow-pink-100 text-center">
-                                <p className="text-xs uppercase font-bold mb-1 opacity-80">Ventas de Hoy</p>
-                                <p className="text-5xl font-black">${tickets.reduce((a,b)=>a+b.total, 0).toFixed(0)}</p>
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100">
+                            <div className="bg-pink-600 p-8 rounded-[40px] mb-8 text-white shadow-2xl shadow-pink-200 text-center">
+                                <p className="text-xs uppercase font-black mb-1 opacity-80 tracking-widest">Total Vendido Hoy</p>
+                                <p className="text-7xl font-black tracking-tighter">${tickets.reduce((a,b)=>a+b.total, 0)}</p>
                             </div>
-                            <div className="space-y-3">
+                            <div className="space-y-3 pb-20">
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className="bg-white p-4 rounded-2xl shadow-sm border-l-8 border-pink-500 flex justify-between items-center">
-                                        <div><p className="font-bold text-sm">{t.hora} - {t.vendedor}</p><p className="text-[10px] text-gray-400 uppercase font-bold">{t.items.map(i=>i.nombre).join(', ')}</p></div>
-                                        <p className="font-black text-pink-600 text-xl">${t.total}</p>
+                                    <div key={t.id} className="bg-white p-5 rounded-[25px] shadow-sm flex justify-between items-center border-r-8 border-green-400">
+                                        <div>
+                                            <p className="font-black text-gray-800 text-sm">{t.hora} - {t.vendedor}</p>
+                                            <p className="text-[10px] text-gray-400 font-bold uppercase">{t.items.map(i=>`${i.nombre}(${i.qty})`).join(', ')}</p>
+                                            {t.descuento_pct > 0 && <span className="text-[9px] bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full font-bold">DESC {t.descuento_pct}%</span>}
+                                        </div>
+                                        <p className="font-black text-gray-800 text-2xl">${t.total}</p>
                                     </div>
                                 ))}
                             </div>
