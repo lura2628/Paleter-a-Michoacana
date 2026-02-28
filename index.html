@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Seguridad Máxima</title>
+    <title>Michoacana Pro - Devoluciones y Auditoría</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -12,7 +12,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
     <style>
         @keyframes pulse-red { 0%, 100% { background-color: #ef4444; } 50% { background-color: #f87171; } }
+        @keyframes pulse-blue { 0%, 100% { background-color: #3b82f6; } 50% { background-color: #93c5fd; } }
         .animate-alert { animation: pulse-red 1.5s infinite; }
+        .animate-listening { animation: pulse-blue 1s infinite; }
         .cart-panel { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 40px 40px 0 0; }
         .cart-hidden { transform: translateY(calc(100% - 70px)); }
         input[type=number]::-webkit-inner-spin-button { display: none; }
@@ -41,6 +43,11 @@
             const [tipoVenta, setTipoVenta] = useState('Venta');
             const [searchTerm, setSearchTerm] = useState('');
             const [needConfig, setNeedConfig] = useState(false);
+            
+            // Estados para Voz y Auditoría
+            const [isListening, setIsListening] = useState(false);
+            const [selectedCorte, setSelectedCorte] = useState(null);
+            const [corteTickets, setCorteTickets] = useState([]);
 
             useEffect(() => {
                 const configStr = localStorage.getItem('fb_config');
@@ -72,6 +79,18 @@
                 return () => { u1(); u2(); u3(); u4(); u5(); };
             }, [db]);
 
+            // Cargar los tickets específicos de un corte cuando se selecciona
+            useEffect(() => {
+                if(selectedCorte && db) {
+                    db.collection('tickets').where('corteId', '==', selectedCorte.id).get()
+                    .then(snap => {
+                        const tks = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                        tks.sort((a,b) => b.timestamp - a.timestamp);
+                        setCorteTickets(tks);
+                    });
+                }
+            }, [selectedCorte, db]);
+
             const handleSaveConfig = () => {
                 let val = document.getElementById('fb-config-input').value;
                 val = val.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
@@ -80,15 +99,20 @@
                     localStorage.setItem('fb_config', val);
                     window.location.reload();
                 } catch(e) {
-                    alert("El código tiene un error. Revisa que empiece con { y termine con } y usa comillas normales.");
+                    alert("El código tiene un error. Revisa las comillas.");
                 }
             };
 
             const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
-            const totalFinal = tipoVenta === 'Venta' ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
+            const totalFinal = (tipoVenta === 'Venta' || tipoVenta === 'Devolución') ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
             const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
-            const totalCajaActual = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
+            
+            // CALCULAR CAJA: Sumar ventas y restar devoluciones
+            const ventasActuales = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
+            const devolucionesActuales = tickets.filter(t=>t.tipo==='Devolución').reduce((a,b)=>a+b.total, 0);
+            const totalCajaActual = ventasActuales - devolucionesActuales;
 
+            // Estadísticas (solo cuentan las ventas, no las devoluciones ni mermas)
             let topEmp = '-', topProd = '-', topHour = '-', bestDay = '-';
             if (tickets.length > 0) {
                 const empSales = {}, prodSales = {}, hourSales = {};
@@ -107,6 +131,14 @@
                 const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
             }
 
+            const agregarAlCarrito = (producto) => {
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === producto.id);
+                    if(ex) return prev.map(i => i.id === producto.id ? {...i, qty: i.qty+1} : i);
+                    return [...prev, {...producto, qty: 1}];
+                });
+            };
+
             const finalizarOperacion = async () => {
                 const batch = db.batch();
                 batch.set(db.collection('tickets').doc(), {
@@ -115,9 +147,75 @@
                     hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                cart.forEach(i => { if(i.id !== 'libre') batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(-i.qty) }); });
+                
+                // Si es devolución, sumamos el stock (+). Si es venta/merma/consumo, restamos (-).
+                cart.forEach(i => { 
+                    if(i.id !== 'libre') {
+                        const stockDelta = tipoVenta === 'Devolución' ? i.qty : -i.qty;
+                        batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(stockDelta) }); 
+                    }
+                });
+                
                 await batch.commit();
                 setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta'); setSearchTerm('');
+            };
+
+            const hacerCorteCaja = async () => {
+                if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
+                const resumen = {};
+                tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
+                
+                const batch = db.batch();
+                const corteRef = db.collection('cortes').doc(); 
+                
+                batch.set(corteRef, {
+                    total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString(),
+                    hora: new Date().toLocaleTimeString(), detalle_productos: resumen,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), {cortado: true, corteId: corteRef.id}));
+                await batch.commit();
+            };
+
+            const escucharVoz = () => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert("Tu navegador o dispositivo no soporta el reconocimiento de voz de esta manera.");
+                    return;
+                }
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'es-MX';
+                recognition.continuous = false;
+                
+                recognition.onstart = () => setIsListening(true);
+                
+                recognition.onresult = (event) => {
+                    const texto = event.results[0][0].transcript.toLowerCase();
+                    let encontroAlgo = false;
+                    
+                    products.forEach(p => {
+                        const nombreProd = p.nombre.toLowerCase();
+                        if (texto.includes(nombreProd)) {
+                            agregarAlCarrito(p);
+                            encontroAlgo = true;
+                        }
+                    });
+
+                    if (encontroAlgo) {
+                        setShowCart(true);
+                    } else {
+                        alert(`Escuché: "${texto}", pero no encontré ningún producto con ese nombre exacto.`);
+                    }
+                };
+                
+                recognition.onerror = (e) => {
+                    alert("Error al escuchar: " + e.error);
+                    setIsListening(false);
+                };
+                
+                recognition.onend = () => setIsListening(false);
+                recognition.start();
             };
 
             const agregarLibre = () => {
@@ -136,7 +234,7 @@
                     <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
                         <div className="bg-white p-8 rounded-[35px] shadow-xl w-full max-w-md text-center">
                             <h1 className="text-3xl font-black text-pink-600 mb-2 italic uppercase">Conexión</h1>
-                            <p className="text-xs text-slate-500 mb-6 font-bold">Pega tu código de Firebase para conectar este dispositivo:</p>
+                            <p className="text-xs text-slate-500 mb-6 font-bold">Pega tu código de Firebase para conectar:</p>
                             <textarea id="fb-config-input" className="w-full h-40 p-4 bg-slate-50 rounded-2xl border-2 border-slate-200 focus:border-pink-400 outline-none font-mono text-[10px] mb-4 shadow-inner" placeholder={'{\n  "apiKey": "...",\n  "authDomain": "..."\n}'}></textarea>
                             <button onClick={handleSaveConfig} className="w-full py-4 bg-pink-600 text-white font-black rounded-2xl uppercase shadow-md active:scale-95 transition-transform">Conectar Sistema 🚀</button>
                         </div>
@@ -170,21 +268,24 @@
                     <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30 shadow-md">
                         <span className="font-black italic uppercase text-xl">Michoacana Pro</span>
                         <div className="flex gap-4 items-center">
-                            <button onClick={() => setView('pos')} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
-                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => setView('history')} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
+                            <button onClick={() => {setView('pos'); setSelectedCorte(null);}} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
+                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('history'); setSelectedCorte(null);}} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
                             {user.rol === 'admin' && <button onClick={() => setView('admin')} className={`text-2xl ${view==='admin'?'scale-125':''}`}>📦</button>}
-                            <button onClick={() => {setUser(null); setView('login');}} className="bg-pink-900 px-4 py-2 rounded-full text-[10px] font-black uppercase ml-2">Salir</button>
+                            <button onClick={() => {setUser(null); setView('login'); setSelectedCorte(null);}} className="bg-pink-900 px-4 py-2 rounded-full text-[10px] font-black uppercase ml-2">Salir</button>
                         </div>
                     </nav>
 
                     {view === 'pos' && (
                         <div className="flex flex-col flex-1 overflow-hidden">
-                            <div className="bg-slate-50 p-3 border-b shadow-inner">
-                                <div className="relative">
+                            <div className="bg-slate-50 p-3 border-b shadow-inner flex gap-2">
+                                <div className="relative flex-1">
                                     <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-xl">🔍</span>
-                                    <input type="text" placeholder="Buscar sabor o producto rápido..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} 
+                                    <input type="text" placeholder="Buscar sabor rápido..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} 
                                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border-2 border-transparent focus:border-pink-300 outline-none font-black text-slate-700 shadow-sm" />
                                 </div>
+                                <button onClick={escucharVoz} className={`w-14 h-14 flex items-center justify-center rounded-2xl text-2xl shadow-sm transition-all ${isListening ? 'animate-listening text-white' : 'bg-white border text-blue-500 hover:bg-blue-50'}`}>
+                                    🎤
+                                </button>
                             </div>
                             <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
                                 {categories.map(cat => (
@@ -196,14 +297,7 @@
                             </div>
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-28 scroll-hide">
                                 {displayedProducts.map(p => (
-                                    <button key={p.id} disabled={p.stock <= 0} onClick={() => {
-                                        setCart(prev => {
-                                            const ex = prev.find(i => i.id === p.id);
-                                            if(ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty+1} : i);
-                                            return [...prev, {...p, qty: 1}];
-                                        });
-                                        setShowCart(true);
-                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all hover:shadow-md flex flex-col justify-between">
+                                    <button key={p.id} disabled={p.stock <= 0} onClick={() => { agregarAlCarrito(p); setShowCart(true); }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all hover:shadow-md flex flex-col justify-between">
                                         <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p>
                                         <p className="text-pink-600 font-black text-2xl">${p.precio}</p>
                                         {searchTerm && <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">{p.categoria}</span>}
@@ -230,13 +324,13 @@
                                     
                                     <div className="mt-4 p-5 bg-slate-100 rounded-[35px] space-y-4">
                                         <div className="flex justify-between items-center">
-                                            {(user.rol === 'admin' || user.rol === 'encargado') ? (
-                                                <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-4 py-2.5 rounded-2xl font-black text-[11px] uppercase text-pink-600 border shadow-sm outline-none">
-                                                    <option value="Venta">💰 Venta Normal</option><option value="Merma">🚫 Merma/Dañado</option><option value="Consumo">🍦 Consumo Propio</option>
-                                                </select>
-                                            ) : <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-2">Venta Directa</span>}
+                                            <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2.5 rounded-2xl font-black text-[11px] uppercase text-pink-600 border shadow-sm outline-none">
+                                                <option value="Venta">💰 Venta Normal</option>
+                                                <option value="Devolución">🔄 Devolución/Cambio</option>
+                                                {(user.rol === 'admin' || user.rol === 'encargado') && <option value="Merma">🚫 Merma/Dañado</option>}
+                                                {(user.rol === 'admin' || user.rol === 'encargado') && <option value="Consumo">🍦 Consumo Propio</option>}
+                                            </select>
                                             
-                                            {/* SEGURIDAD: DESCUENTOS SOLO PARA ADMIN */}
                                             {tipoVenta === 'Venta' && user.rol === 'admin' && (
                                                 <div className="flex gap-1.5">
                                                     {[0, 10, 30].map(pct => (
@@ -247,12 +341,17 @@
                                         </div>
 
                                         <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3 px-2">
-                                            <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{tipoVenta === 'Venta' ? 'Total a Pagar' : 'Valor Producto'}</span><span className="text-6xl font-black text-slate-800 tracking-tighter">${totalFinal}</span></div>
-                                            {tipoVenta !== 'Venta' && <span className="text-[10px] font-black text-white bg-orange-500 px-3 py-1 rounded-full uppercase mb-2">Autorizado</span>}
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                                    {tipoVenta === 'Venta' ? 'Total a Pagar' : tipoVenta === 'Devolución' ? 'Dinero a Devolver' : 'Valor Producto'}
+                                                </span>
+                                                <span className={`text-6xl font-black tracking-tighter ${tipoVenta === 'Devolución' ? 'text-orange-500' : 'text-slate-800'}`}>${totalFinal}</span>
+                                            </div>
+                                            {tipoVenta !== 'Venta' && <span className={`text-[10px] font-black text-white px-3 py-1 rounded-full uppercase mb-2 ${tipoVenta === 'Devolución' ? 'bg-orange-500' : 'bg-red-400'}`}>{tipoVenta}</span>}
                                             {discountPct > 0 && <span className="text-[10px] font-black text-pink-500 uppercase bg-pink-50 px-2 py-1 rounded-lg mb-2">Ahorro: ${subtotal - totalFinal}</span>}
                                         </div>
 
-                                        {tipoVenta==='Venta' && (
+                                        {tipoVenta === 'Venta' && (
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="flex flex-col">
                                                     <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
@@ -264,7 +363,9 @@
                                                 </div>
                                             </div>
                                         )}
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl active:scale-95 transition-all">FINALIZAR COBRO</button>
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl active:scale-95 transition-all">
+                                            {tipoVenta === 'Devolución' ? 'CONFIRMAR DEVOLUCIÓN 🔄' : 'FINALIZAR COBRO ✅'}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -273,90 +374,122 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
-                                <div className="flex flex-wrap gap-2">
-                                    {categories.map((cat, idx) => (
-                                        <div key={idx} className="bg-slate-50 px-3 py-2 rounded-2xl flex items-center gap-2 border">
-                                            <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
-                                            {cat !== 'Venta Libre' && (
-                                                <div className="flex gap-1 ml-2">
-                                                    <button onClick={()=>{const n = prompt("Nuevo nombre:", cat); if(n){ const c = [...categories]; c[idx] = n.trim(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-blue-500 font-bold text-xs bg-blue-50 px-2 rounded-lg">EDIT</button>
-                                                    <button onClick={()=>{if(confirm("¿Borrar apartado entero?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
+                            {selectedCorte ? (
+                                <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                    <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl">← Volver a Cortes</button>
+                                    <h2 className="font-black uppercase text-slate-800 text-xl mb-1">Detalle del Día</h2>
+                                    <p className="text-xs text-slate-400 font-bold mb-6 uppercase">{selectedCorte.fecha} - Responsable: {selectedCorte.responsable}</p>
+                                    
+                                    <div className="space-y-3">
+                                        {corteTickets.length === 0 ? <p className="text-center text-slate-400 italic">Cargando movimientos...</p> : 
+                                         corteTickets.map(t => (
+                                            <div key={t.id} className={`p-4 rounded-[20px] border-r-4 shadow-sm flex justify-between items-center ${t.tipo==='Venta'?'border-green-500 bg-slate-50':t.tipo==='Devolución'?'border-orange-500 bg-orange-50':t.tipo==='Merma'?'border-red-400 bg-red-50':'border-blue-400 bg-blue-50'}`}>
+                                                <div className="flex-1 pr-3">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-black text-[11px] uppercase">{t.hora}</span>
+                                                        <span className="text-[9px] bg-white border px-2 py-0.5 rounded-md text-slate-500 font-bold uppercase">{t.vendedor}</span>
+                                                        {t.tipo !== 'Venta' && <span className="text-[8px] px-2 py-0.5 rounded-lg text-slate-600 font-black uppercase border">{t.tipo}</span>}
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-500 font-bold uppercase leading-tight mt-1">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
                                                 </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                    <button onClick={()=>{const n = prompt("Nueva categoría:"); if(n){ const c = [...categories, n.trim()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-4 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
-                                </div>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
-                                {employees.map(e => (
-                                    <div key={e.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
-                                        <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
-                                        <div className="flex items-center gap-3">
-                                            <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
-                                                <option value="admin">Administrador</option>
-                                                <option value="encargado">Encargado</option>
-                                                <option value="vendedor">Vendedor</option>
-                                            </select>
-                                            <div className="flex items-center bg-white border rounded-xl px-2">
-                                                <span className="text-[8px] font-black text-slate-400">PIN</span>
-                                                <input className="w-12 p-2 text-center font-black text-xs outline-none bg-transparent" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                                <div className="text-right leading-none">
+                                                    <p className={`text-xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
+                                                    {t.descuento > 0 && <p className="text-[8px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
+                                                </div>
                                             </div>
-                                            <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg hover:text-red-500">✕</button>
-                                        </div>
-                                    </div>
-                                ))}
-                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
-                            </div>
-
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
-                                    <div className="flex gap-1 overflow-x-auto scroll-hide">
-                                        {categories.filter(c=>c!=='Venta Libre').map(c => (
-                                            <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva===c?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>{c}</button>
                                         ))}
                                     </div>
                                 </div>
-                                {products.filter(p => p.categoria === catActiva).map(p => (
-                                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
-                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-3 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex gap-3">
-                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
-                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
-                                            </div>
-                                            <button onClick={() => confirm("¿Borrar permanentemente?") && db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl hover:text-red-500">✕</button>
+                            ) : (
+                                <>
+                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                        <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
+                                        <div className="flex flex-wrap gap-2">
+                                            {categories.map((cat, idx) => (
+                                                <div key={idx} className="bg-slate-50 px-3 py-2 rounded-2xl flex items-center gap-2 border">
+                                                    <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
+                                                    {cat !== 'Venta Libre' && (
+                                                        <div className="flex gap-1 ml-2">
+                                                            <button onClick={()=>{const n = prompt("Nuevo nombre:", cat); if(n){ const c = [...categories]; c[idx] = n.trim(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-blue-500 font-bold text-xs bg-blue-50 px-2 rounded-lg">EDIT</button>
+                                                            <button onClick={()=>{if(confirm("¿Borrar apartado entero?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <button onClick={()=>{const n = prompt("Nueva categoría:"); if(n){ const c = [...categories, n.trim()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-4 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
                                         </div>
                                     </div>
-                                ))}
-                                <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
-                            </div>
+
+                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                        <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
+                                        {employees.map(e => (
+                                            <div key={e.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
+                                                <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                                <div className="flex items-center gap-3">
+                                                    <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
+                                                        <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
+                                                    </select>
+                                                    <div className="flex items-center bg-white border rounded-xl px-2">
+                                                        <span className="text-[8px] font-black text-slate-400">PIN</span>
+                                                        <input className="w-12 p-2 text-center font-black text-xs outline-none bg-transparent" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                                    </div>
+                                                    <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg hover:text-red-500">✕</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
+                                            <div className="flex gap-1 overflow-x-auto scroll-hide">
+                                                {categories.filter(c=>c!=='Venta Libre').map(c => (
+                                                    <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva===c?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>{c}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {products.filter(p => p.categoria === catActiva).map(p => (
+                                            <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
+                                                <input className="font-black uppercase text-xs bg-transparent w-full mb-3 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex gap-3">
+                                                        <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
+                                                        <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
+                                                    </div>
+                                                    <button onClick={() => confirm("¿Borrar permanentemente?") && db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl hover:text-red-500">✕</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                        <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">📑 Auditoría de Cortes Pasados</h2>
+                                        {cortes.map(c => (
+                                            <div key={c.id} className="p-5 bg-slate-50 rounded-[25px] border-l-[8px] border-pink-500 mb-4 shadow-sm">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div>
+                                                        <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
+                                                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
+                                                    </div>
+                                                    <p className="text-2xl font-black text-green-600">${c.total}</p>
+                                                </div>
+                                                <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Ver Movimientos 🔍</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
                             <div className="bg-pink-600 p-8 rounded-[40px] mb-4 text-white text-center shadow-xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual (Ventas)</p>
+                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
                                 <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
-                                <button onClick={async () => {
-                                    if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
-                                    const resumen = {};
-                                    tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
-                                    await db.collection('cortes').add({
-                                        total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString(),
-                                        hora: new Date().toLocaleTimeString(), detalle_productos: resumen,
-                                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                                    });
-                                    const b = db.batch();
-                                    tickets.forEach(t => b.update(db.collection('tickets').doc(t.id), {cortado: true}));
-                                    await b.commit();
-                                }} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
+                                <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3 mb-6">
@@ -379,19 +512,19 @@
                             </div>
 
                             <div className="space-y-3 pb-24">
-                                <p className="font-black uppercase text-slate-400 text-[10px] ml-2 italic mb-2">Desglose de Tickets ({tickets.length}):</p>
+                                <p className="font-black uppercase text-slate-400 text-[10px] ml-2 italic mb-2">Desglose de Movimientos ({tickets.length}):</p>
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex justify-between items-center ${t.tipo==='Venta'?'border-green-500':t.tipo==='Merma'?'border-red-400 opacity-80':'border-blue-400 opacity-80'}`}>
+                                    <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex justify-between items-center ${t.tipo==='Venta'?'border-green-500':t.tipo==='Devolución'?'border-orange-500 opacity-90':t.tipo==='Merma'?'border-red-400 opacity-80':'border-blue-400 opacity-80'}`}>
                                         <div className="flex-1 pr-3">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <span className="font-black text-[12px] uppercase">{t.hora}</span>
                                                 <span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span>
-                                                {t.tipo !== 'Venta' && <span className={`text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase ${t.tipo==='Merma'?'bg-red-400':'bg-blue-400'}`}>{t.tipo}</span>}
+                                                {t.tipo !== 'Venta' && <span className={`text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase ${t.tipo==='Devolución'?'bg-orange-500':t.tipo==='Merma'?'bg-red-400':'bg-blue-400'}`}>{t.tipo}</span>}
                                             </div>
                                             <p className="text-[10px] text-slate-500 font-bold uppercase leading-tight truncate">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
                                         </div>
                                         <div className="text-right leading-none">
-                                            <p className="text-2xl font-black">${t.total}</p>
+                                            <p className={`text-2xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
                                             {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
                                         </div>
                                     </div>
