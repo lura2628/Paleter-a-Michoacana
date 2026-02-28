@@ -29,25 +29,54 @@
             useEffect(() => {
                 const config = JSON.parse(localStorage.getItem('fb_config'));
                 if (config && !firebase.apps.length) {
-                    const app = firebase.initializeApp(config);
-                    setDb(app.firestore());
+                const App = () => {
+            const [db, setDb] = useState(null);
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState('login');
+            const [products, setProducts] = useState([]);
+            const [employees, setEmployees] = useState([]);
+            const [tickets, setTickets] = useState([]);
+            const [cart, setCart] = useState([]);
+            const [discountPct, setDiscountPct] = useState(0);
+
+            // REVISAR SI HAY CONFIGURACIÓN
+            const configGuardada = localStorage.getItem('fb_config');
+
+            // SI NO HAY CONFIGURACIÓN, MOSTRAR EL CUADRO BLANCO
+            if (!configGuardada) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-pink-50 p-6">
+                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-4 border-pink-500">
+                            <h2 className="text-2xl font-bold mb-2 text-pink-600 text-center uppercase italic">Configuración Inicial</h2>
+                            <p className="text-xs text-gray-500 mb-4 text-center">Pega el código de las llaves que te pasé por WhatsApp</p>
+                            <textarea id="cuadro_llaves" className="w-full h-48 p-4 border rounded-2xl mb-4 font-mono text-[10px] bg-gray-50 shadow-inner" placeholder='{ "apiKey": "..." }'></textarea>
+                            <button onClick={() => {
+                                const texto = document.getElementById('cuadro_llaves').value;
+                                if(texto.includes("apiKey")) {
+                                    localStorage.setItem('fb_config', texto);
+                                    window.location.reload();
+                                } else {
+                                    alert("Código incorrecto. Copia todo el bloque desde { hasta }");
+                                }
+                            }} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black shadow-lg">GUARDAR Y ACTIVAR</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // SI HAY CONFIGURACIÓN, CARGAR FIREBASE
+            useEffect(() => {
+                try {
+                    const config = JSON.parse(configGuardada);
+                    if (config && !firebase.apps.length) {
+                        const app = firebase.initializeApp(config);
+                        setDb(app.firestore());
+                    }
+                } catch(e) {
+                    localStorage.removeItem('fb_config');
+                    window.location.reload();
                 }
             }, []);
-
-            useEffect(() => {
-                if (!db) return;
-                const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const unsubEmps = db.collection('empleados').onSnapshot(s => {
-                    const emps = s.docs.map(d => ({id:d.id, ...d.data()}));
-                    if(emps.length === 0) {
-                        db.collection('empleados').add({nombre: 'José', pin: '1820', rol: 'admin', canDiscount: true});
-                    }
-                    setEmployees(emps);
-                });
-                const hoy = new Date(); hoy.setHours(0,0,0,0);
-                const unsubTickets = db.collection('tickets').where('timestamp', '>=', hoy).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                return () => { unsubProds(); unsubEmps(); unsubTickets(); };
-            }, [db]);
 
             const finalizarVenta = async () => {
                 const subtotal = cart.reduce((a, b) => a + (b.precio * b.qty), 0);
@@ -200,3 +229,4 @@
     </script>
 </body>
 </html>
+
