@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Sistema Definitivo</title>
+    <title>Michoacana Pro - Seguridad Máxima</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -40,7 +40,7 @@
             const [pagoCon, setPagoCon] = useState('');
             const [tipoVenta, setTipoVenta] = useState('Venta');
             const [searchTerm, setSearchTerm] = useState('');
-            const [needConfig, setNeedConfig] = useState(false); // PANTALLA DE CONEXIÓN RECUPERADA
+            const [needConfig, setNeedConfig] = useState(false);
 
             useEffect(() => {
                 const configStr = localStorage.getItem('fb_config');
@@ -74,7 +74,6 @@
 
             const handleSaveConfig = () => {
                 let val = document.getElementById('fb-config-input').value;
-                // Arreglar comillas de Apple automáticamente
                 val = val.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
                 try {
                     JSON.parse(val);
@@ -132,7 +131,6 @@
                 if(n && p && s) db.collection('productos').add({nombre: n.toUpperCase(), precio: Number(p), stock: Number(s), categoria: catActiva});
             };
 
-            // PANTALLA DE CONEXIÓN
             if (needConfig) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
@@ -237,7 +235,9 @@
                                                     <option value="Venta">💰 Venta Normal</option><option value="Merma">🚫 Merma/Dañado</option><option value="Consumo">🍦 Consumo Propio</option>
                                                 </select>
                                             ) : <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-2">Venta Directa</span>}
-                                            {tipoVenta === 'Venta' && (
+                                            
+                                            {/* SEGURIDAD: DESCUENTOS SOLO PARA ADMIN */}
+                                            {tipoVenta === 'Venta' && user.rol === 'admin' && (
                                                 <div className="flex gap-1.5">
                                                     {[0, 10, 30].map(pct => (
                                                         <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[11px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
@@ -245,20 +245,26 @@
                                                 </div>
                                             )}
                                         </div>
+
                                         <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3 px-2">
                                             <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{tipoVenta === 'Venta' ? 'Total a Pagar' : 'Valor Producto'}</span><span className="text-6xl font-black text-slate-800 tracking-tighter">${totalFinal}</span></div>
                                             {tipoVenta !== 'Venta' && <span className="text-[10px] font-black text-white bg-orange-500 px-3 py-1 rounded-full uppercase mb-2">Autorizado</span>}
                                             {discountPct > 0 && <span className="text-[10px] font-black text-pink-500 uppercase bg-pink-50 px-2 py-1 rounded-lg mb-2">Ahorro: ${subtotal - totalFinal}</span>}
                                         </div>
+
                                         {tipoVenta==='Venta' && (
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
-                                                <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" /></div>
-                                                <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Dar Cambio:</label>
-                                                <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm transition-colors ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div></div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
+                                                    <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Dar Cambio:</label>
+                                                    <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div>
+                                                </div>
                                             </div>
                                         )}
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl shadow-pink-100 active:scale-95 transition-all">FINALIZAR COBRO</button>
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl active:scale-95 transition-all">FINALIZAR COBRO</button>
                                     </div>
                                 </div>
                             </div>
@@ -292,7 +298,9 @@
                                         <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex items-center gap-3">
                                             <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
-                                                <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
+                                                <option value="admin">Administrador</option>
+                                                <option value="encargado">Encargado</option>
+                                                <option value="vendedor">Vendedor</option>
                                             </select>
                                             <div className="flex items-center bg-white border rounded-xl px-2">
                                                 <span className="text-[8px] font-black text-slate-400">PIN</span>
