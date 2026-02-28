@@ -70,4 +70,230 @@
                 const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubEmps = db.collection('empleados').onSnapshot(s => {
                     const emps = s.docs.map(d => ({id:d.id, ...d.data()}));
-                    if(emps.length === 0) db.collection('empleados').add({nombre: 'JOSÉ', pin: '1820',
+                    if(emps.length === 0) db.collection('empleados').add({nombre: 'JOSÉ', pin: '1820', rol: 'admin'});
+                    setEmployees(emps);
+                });
+                const unsubCats = db.collection('config').doc('categorias').onSnapshot(doc => {
+                    if(doc.exists) setCategories(doc.data().lista);
+                });
+                const hoy = new Date(); hoy.setHours(0,0,0,0);
+                const unsubTickets = db.collection('tickets').where('timestamp', '>=', hoy).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                return () => { unsubProds(); unsubEmps(); unsubCats(); unsubTickets(); };
+            }, [db]);
+
+            const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
+            const totalFinal = tipoVenta === 'Venta' ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
+
+            const finalizarOperacion = async () => {
+                const batch = db.batch();
+                const tRef = db.collection('tickets').doc();
+                batch.set(tRef, {
+                    vendedor: user.nombre, items: cart, total: totalFinal, tipo: tipoVenta, valor_merma: tipoVenta !== 'Venta' ? subtotal : 0,
+                    hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                cart.forEach(item => {
+                    if(item.id !== 'libre') {
+                        batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) });
+                    }
+                });
+                await batch.commit();
+                setCart([]); setDiscountPct(0); setTipoVenta('Venta');
+            };
+
+            const agregarVentaLibre = () => {
+                const nom = prompt("Nombre del producto especial:");
+                const pre = prompt("Precio:");
+                if(nom && pre) setCart([...cart, {id: 'libre', nombre: nom.toUpperCase(), precio: Number(pre), qty: 1}]);
+            };
+
+            if (view === 'login') return (
+                <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-pink-100">
+                    <h1 className="text-7xl font-black text-pink-600 mb-12 italic uppercase tracking-tighter drop-shadow-2xl">Michoacana</h1>
+                    <div className="grid grid-cols-2 gap-6 w-full max-w-xl">
+                        {employees.map(e => (
+                            <button key={e.id} onClick={() => {
+                                const p = prompt(`PIN para ${e.nombre}:`);
+                                if(p === e.pin) { setUser(e); setView('pos'); }
+                            }} className="bg-white p-12 rounded-[50px] shadow-xl border-b-[10px] border-pink-200 font-black uppercase text-gray-700 active:scale-90 transition-all text-2xl">
+                                {e.nombre}
+                                <p className="text-[10px] text-pink-400 mt-2 opacity-50 tracking-widest">{e.rol}</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex flex-col h-screen max-w-7xl mx-auto bg-white shadow-2xl overflow-hidden">
+                    <nav className="bg-pink-600 p-5 text-white flex justify-between items-center shadow-lg z-30">
+                        <div className="flex flex-col italic">
+                            <span className="font-black uppercase text-3xl tracking-tighter">Michoacana</span>
+                            <span className="text-[10px] font-black opacity-80 uppercase tracking-widest">{user.nombre} ({user.rol})</span>
+                        </div>
+                        <div className="flex gap-8 items-center">
+                            <button onClick={() => setView('pos')} className="text-4xl">🛒</button>
+                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => setView('history')} className="text-4xl">📊</button>}
+                            {user.rol === 'admin' && <button onClick={() => setView('admin')} className="text-4xl">📦</button>}
+                            <button onClick={() => {setUser(null); setView('login');}} className="text-sm bg-black text-white p-3 rounded-3xl px-6 font-black ml-4 uppercase">SALIR</button>
+                        </div>
+                    </nav>
+
+                    {view === 'pos' && (
+                        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+                            <div className="bg-slate-100 flex md:flex-col overflow-x-auto md:w-32 p-3 gap-3 border-r shadow-inner">
+                                {categories.map(cat => (
+                                    <button key={cat} onClick={() => cat === 'Venta Libre' ? agregarVentaLibre() : setCatActiva(cat)} className={`flex-1 md:flex-none py-5 px-2 rounded-[30px] font-black text-[11px] uppercase transition-all ${catActiva === cat ? 'bg-pink-600 text-white scale-105 shadow-lg shadow-pink-200' : 'bg-white text-gray-400'}`}>
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex-1 p-6 overflow-y-auto bg-slate-50 content-start">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+                                    {products.filter(p => p.categoria === catActiva).map(p => (
+                                        <button key={p.id} disabled={p.stock <= 0} onClick={() => {
+                                            setCart(prev => {
+                                                const ex = prev.find(i => i.id === p.id);
+                                                if(ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty+1} : i);
+                                                return [...prev, {...p, qty: 1}];
+                                            });
+                                        }} className={`group p-6 rounded-[40px] shadow-sm bg-white border-4 border-transparent active:border-pink-500 relative transition-all ${p.stock <= 0 ? 'opacity-20' : 'hover:shadow-xl'}`}>
+                                            <p className="font-black text-gray-800 leading-tight mb-2 uppercase text-sm">{p.nombre}</p>
+                                            <p className="text-pink-600 font-black text-3xl">${p.precio}</p>
+                                            {/* ALERTA DE STOCK: ROJO SI ES <= 15 */}
+                                            <div className={`absolute top-4 right-4 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${p.stock <= 15 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-400'}`}>
+                                                Stock: {p.stock}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            
+                            <div className="w-full md:w-96 bg-white border-l p-8 flex flex-col shadow-2xl z-20">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="font-black text-xs text-slate-300 uppercase tracking-widest">PEDIDO</h2>
+                                    {(user.rol === 'admin' || user.rol === 'encargado') && (
+                                        <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="text-[10px] font-black p-3 rounded-2xl border-2 border-slate-100 uppercase text-pink-500">
+                                            <option value="Venta">💰 Venta Normal</option>
+                                            <option value="Merma">🚫 Merma (Dañado)</option>
+                                            <option value="Cortesia">🎁 Regalo / Consumo</option>
+                                        </select>
+                                    )}
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto pr-2">
+                                    {cart.map(item => (
+                                        <div key={item.id} className="flex justify-between items-center mb-5 bg-slate-50 p-5 rounded-[30px] border border-slate-100">
+                                            <div className="flex flex-col">
+                                                <span className="font-black text-gray-800 text-sm uppercase leading-none">{item.nombre}</span>
+                                                <span className="text-xs text-pink-500 font-black mt-2 italic">x{item.qty} • ${Number(item.precio) * item.qty}</span>
+                                            </div>
+                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="bg-white text-red-400 w-12 h-12 rounded-2xl font-black shadow-sm text-2xl hover:bg-red-500 hover:text-white transition-all">✕</button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="pt-8 border-t-[6px] border-slate-50">
+                                    {tipoVenta === 'Venta' && (
+                                        <div className="flex gap-2 mb-6">
+                                            {[0, 10, 20, 30].map(pct => (
+                                                <button key={pct} onClick={() => setDiscountPct(pct)} className={`flex-1 py-4 rounded-2xl font-black border-2 transition-all ${discountPct===pct?'bg-pink-600 border-pink-600 text-white shadow-lg':'text-pink-300 border-slate-50'}`}>{pct}%</button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between items-end mb-8">
+                                        <div className="flex flex-col italic">
+                                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{tipoVenta === 'Venta' ? 'TOTAL COBRAR' : 'VALOR PERDIDO'}</span>
+                                            <span className="text-6xl font-black text-slate-800 tracking-tighter">${totalFinal}</span>
+                                        </div>
+                                    </div>
+                                    <button onClick={finalizarOperacion} disabled={cart.length===0} className={`w-full py-8 rounded-[40px] font-black shadow-2xl uppercase text-4xl active:scale-95 transition-all ${tipoVenta==='Venta'?'bg-pink-600 text-white shadow-pink-200':'bg-orange-600 text-white shadow-orange-200'}`}>
+                                        {tipoVenta==='Venta' ? 'COBRAR' : 'REGISTRAR'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'admin' && (
+                        <div className="flex-1 p-8 overflow-y-auto bg-slate-100 space-y-10">
+                            {/* ALTA PRODUCTOS */}
+                            <div className="bg-white p-12 rounded-[55px] shadow-sm border-2 border-pink-50">
+                                <h2 className="text-4xl font-black uppercase italic text-pink-600 mb-8 tracking-tighter">Registrar Mercancía</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <input id="new-name" className="w-full p-5 border-2 rounded-[30px] font-black bg-slate-50 outline-pink-500 uppercase" placeholder="NOMBRE DEL SABOR" />
+                                    <input id="new-price" type="number" className="w-full p-5 border-2 rounded-[30px] font-black bg-slate-50 outline-pink-500" placeholder="PRECIO $" />
+                                    <input id="new-stock" type="number" className="w-full p-5 border-2 rounded-[30px] font-black bg-slate-50 outline-pink-500" placeholder="CANTIDAD INICIAL" />
+                                    <select id="new-cat" className="w-full p-5 border-2 rounded-[30px] font-black bg-white outline-pink-500 uppercase">
+                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <button onClick={() => {
+                                    const n = document.getElementById('new-name').value;
+                                    const p = document.getElementById('new-price').value;
+                                    const s = document.getElementById('new-stock').value;
+                                    const c = document.getElementById('new-cat').value;
+                                    if(n && p) {
+                                        db.collection('productos').add({nombre: n.toUpperCase(), precio: Number(p), stock: Number(s), categoria: c});
+                                        document.getElementById('new-name').value = ''; document.getElementById('new-price').value = '';
+                                    }
+                                }} className="w-full bg-green-500 text-white py-6 rounded-[40px] font-black shadow-xl uppercase text-2xl mt-8">REGISTRAR ✅</button>
+                            </div>
+
+                            {/* LISTA DE INVENTARIO CON ALERTA */}
+                            <div className="space-y-4">
+                                <h3 className="font-black text-slate-400 uppercase text-xs tracking-[0.5em] ml-6">Estado del Inventario</h3>
+                                {products.sort((a,b) => a.stock - b.stock).map(p => (
+                                    <div key={p.id} className={`bg-white p-6 rounded-[40px] flex justify-between items-center border-l-[20px] shadow-sm ${p.stock <= 15 ? 'border-red-500' : 'border-green-400'}`}>
+                                        <div>
+                                            <p className="font-black text-gray-800 text-xl uppercase tracking-tighter">{p.nombre}</p>
+                                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{p.categoria}</p>
+                                        </div>
+                                        <div className="flex items-center gap-8">
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-black text-slate-300 uppercase">Stock Actual</p>
+                                                <input type="number" defaultValue={p.stock} onBlur={(e)=>db.collection('productos').doc(p.id).update({stock: Number(e.target.value)})} className={`text-3xl font-black bg-transparent w-20 text-right outline-none ${p.stock <= 15 ? 'text-red-500' : 'text-slate-800'}`} />
+                                            </div>
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('productos').doc(p.id).delete()} className="text-red-200 text-2xl p-4">🗑️</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'history' && (
+                        <div className="flex-1 p-8 overflow-y-auto bg-slate-100">
+                            <div className="bg-pink-600 p-12 rounded-[60px] mb-10 text-white shadow-2xl text-center">
+                                <p className="text-sm uppercase font-black opacity-70 tracking-widest mb-2 italic">Efectivo en Caja</p>
+                                <p className="text-[100px] font-black tracking-tighter leading-none">${tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0)}</p>
+                            </div>
+                            <div className="space-y-6 pb-20">
+                                {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
+                                    <div key={t.id} className={`bg-white p-8 rounded-[45px] shadow-sm flex justify-between items-center border-r-[20px] ${t.tipo==='Venta'?'border-green-500':'border-orange-500 opacity-60'}`}>
+                                        <div>
+                                            <p className="font-black text-gray-800 text-xl italic uppercase">{t.hora} • {t.vendedor}</p>
+                                            <p className="text-xs text-slate-400 font-black uppercase mt-1">{t.items.map(i=>`${i.nombre}(${i.qty})`).join(', ')}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-black text-gray-800 text-4xl tracking-tighter">${t.total}</p>
+                                            {t.tipo !== 'Venta' && <p className="text-[10px] font-black text-orange-400 uppercase italic">Pérdida: ${t.valor_merma}</p>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+<script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-auth-compat.js"></script>
