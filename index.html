@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Estadísticas y Búsqueda</title>
+    <title>Michoacana Pro - Sistema Definitivo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -39,13 +39,23 @@
             const [showCart, setShowCart] = useState(false);
             const [pagoCon, setPagoCon] = useState('');
             const [tipoVenta, setTipoVenta] = useState('Venta');
-            const [searchTerm, setSearchTerm] = useState(''); // Estado de la lupa
+            const [searchTerm, setSearchTerm] = useState('');
+            const [needConfig, setNeedConfig] = useState(false); // PANTALLA DE CONEXIÓN RECUPERADA
 
             useEffect(() => {
-                const config = JSON.parse(localStorage.getItem('fb_config'));
-                if (config && !firebase.apps.length) {
-                    const app = firebase.initializeApp(config);
-                    setDb(app.firestore());
+                const configStr = localStorage.getItem('fb_config');
+                if (!configStr) {
+                    setNeedConfig(true);
+                    return;
+                }
+                try {
+                    const config = JSON.parse(configStr);
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(config);
+                    }
+                    setDb(firebase.firestore());
+                } catch (error) {
+                    setNeedConfig(true);
                 }
             }, []);
 
@@ -54,7 +64,6 @@
                 const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                // Traer más cortes para tener una mejor estadística del "Mejor Día"
                 const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(50).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
                     if(doc.exists) setCategories(doc.data().lista);
@@ -63,37 +72,41 @@
                 return () => { u1(); u2(); u3(); u4(); u5(); };
             }, [db]);
 
+            const handleSaveConfig = () => {
+                let val = document.getElementById('fb-config-input').value;
+                // Arreglar comillas de Apple automáticamente
+                val = val.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
+                try {
+                    JSON.parse(val);
+                    localStorage.setItem('fb_config', val);
+                    window.location.reload();
+                } catch(e) {
+                    alert("El código tiene un error. Revisa que empiece con { y termine con } y usa comillas normales.");
+                }
+            };
+
             const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
             const totalFinal = tipoVenta === 'Venta' ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
             const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
             const totalCajaActual = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
 
-            // ---------------- ESTADÍSTICAS INTELIGENTES ----------------
-            let topEmp = '-', topProd = '-', topHour = '-';
+            let topEmp = '-', topProd = '-', topHour = '-', bestDay = '-';
             if (tickets.length > 0) {
                 const empSales = {}, prodSales = {}, hourSales = {};
                 tickets.filter(t=>t.tipo==='Venta').forEach(t => {
                     empSales[t.vendedor] = (empSales[t.vendedor] || 0) + t.total;
-                    const h = t.hora.split(':')[0]; // Sacar solo la hora (ej. 14 de 14:30)
+                    const h = t.hora.split(':')[0]; 
                     hourSales[h] = (hourSales[h] || 0) + 1;
                     t.items.forEach(i => prodSales[i.nombre] = (prodSales[i.nombre] || 0) + i.qty);
                 });
-                const te = Object.entries(empSales).sort((a,b)=>b[1]-a[1])[0];
-                if(te) topEmp = `${te[0]} ($${te[1]})`;
-                const tp = Object.entries(prodSales).sort((a,b)=>b[1]-a[1])[0];
-                if(tp) topProd = `${tp[0]} (${tp[1]} pzas)`;
-                const th = Object.entries(hourSales).sort((a,b)=>b[1]-a[1])[0];
-                if(th) topHour = `${th[0]}:00 hrs`;
+                const te = Object.entries(empSales).sort((a,b)=>b[1]-a[1])[0]; if(te) topEmp = `${te[0]} ($${te[1]})`;
+                const tp = Object.entries(prodSales).sort((a,b)=>b[1]-a[1])[0]; if(tp) topProd = `${tp[0]} (${tp[1]} pzas)`;
+                const th = Object.entries(hourSales).sort((a,b)=>b[1]-a[1])[0]; if(th) topHour = `${th[0]}:00 hrs`;
             }
-
-            let bestDay = '-';
             if (cortes.length > 0) {
-                const daySales = {};
-                cortes.forEach(c => daySales[c.fecha] = (daySales[c.fecha] || 0) + c.total);
-                const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0];
-                if(td) bestDay = `${td[0]} ($${td[1]})`;
+                const daySales = {}; cortes.forEach(c => daySales[c.fecha] = (daySales[c.fecha] || 0) + c.total);
+                const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
             }
-            // -----------------------------------------------------------
 
             const finalizarOperacion = async () => {
                 const batch = db.batch();
@@ -109,21 +122,29 @@
             };
 
             const agregarLibre = () => {
-                const p = prompt("Precio del producto extra:");
-                const n = prompt("Sabor/Concepto:");
+                const p = prompt("Precio del producto extra:"); const n = prompt("Sabor/Concepto:");
                 if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1, categoria: 'Venta Libre'}]); setShowCart(true); }
             };
 
-            const handleUpdateProduct = (id, field, value) => {
-                db.collection('productos').doc(id).update({ [field]: field === 'nombre' ? value.toUpperCase() : Number(value) });
-            };
-
+            const handleUpdateProduct = (id, field, value) => db.collection('productos').doc(id).update({ [field]: field === 'nombre' ? value.toUpperCase() : Number(value) });
             const handleAddProduct = () => {
-                const n = prompt("Nombre del sabor/producto:");
-                const p = prompt("Precio $:");
-                const s = prompt("Stock inicial:");
+                const n = prompt("Nombre:"); const p = prompt("Precio $:"); const s = prompt("Stock inicial:");
                 if(n && p && s) db.collection('productos').add({nombre: n.toUpperCase(), precio: Number(p), stock: Number(s), categoria: catActiva});
             };
+
+            // PANTALLA DE CONEXIÓN
+            if (needConfig) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
+                        <div className="bg-white p-8 rounded-[35px] shadow-xl w-full max-w-md text-center">
+                            <h1 className="text-3xl font-black text-pink-600 mb-2 italic uppercase">Conexión</h1>
+                            <p className="text-xs text-slate-500 mb-6 font-bold">Pega tu código de Firebase para conectar este dispositivo:</p>
+                            <textarea id="fb-config-input" className="w-full h-40 p-4 bg-slate-50 rounded-2xl border-2 border-slate-200 focus:border-pink-400 outline-none font-mono text-[10px] mb-4 shadow-inner" placeholder={'{\n  "apiKey": "...",\n  "authDomain": "..."\n}'}></textarea>
+                            <button onClick={handleSaveConfig} className="w-full py-4 bg-pink-600 text-white font-black rounded-2xl uppercase shadow-md active:scale-95 transition-transform">Conectar Sistema 🚀</button>
+                        </div>
+                    </div>
+                );
+            }
 
             if (view === 'login') return (
                 <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
@@ -141,7 +162,6 @@
                 </div>
             );
 
-            // Lógica de Lupa: Si hay texto, filtra todo. Si no, filtra por categoría
             const displayedProducts = products.filter(p => {
                 if (searchTerm) return p.nombre.toLowerCase().includes(searchTerm.toLowerCase());
                 return p.categoria === catActiva;
@@ -161,7 +181,6 @@
 
                     {view === 'pos' && (
                         <div className="flex flex-col flex-1 overflow-hidden">
-                            {/* BUSCADOR MANUAL CON LUPA */}
                             <div className="bg-slate-50 p-3 border-b shadow-inner">
                                 <div className="relative">
                                     <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-xl">🔍</span>
@@ -169,7 +188,6 @@
                                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border-2 border-transparent focus:border-pink-300 outline-none font-black text-slate-700 shadow-sm" />
                                 </div>
                             </div>
-
                             <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
                                 {categories.map(cat => (
                                     <button key={cat} onClick={() => { if(cat === 'Venta Libre') agregarLibre(); else { setCatActiva(cat); setSearchTerm(''); } }} 
@@ -178,7 +196,6 @@
                                     </button>
                                 ))}
                             </div>
-
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-28 scroll-hide">
                                 {displayedProducts.map(p => (
                                     <button key={p.id} disabled={p.stock <= 0} onClick={() => {
@@ -220,7 +237,6 @@
                                                     <option value="Venta">💰 Venta Normal</option><option value="Merma">🚫 Merma/Dañado</option><option value="Consumo">🍦 Consumo Propio</option>
                                                 </select>
                                             ) : <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-2">Venta Directa</span>}
-                                            
                                             {tipoVenta === 'Venta' && (
                                                 <div className="flex gap-1.5">
                                                     {[0, 10, 30].map(pct => (
@@ -229,26 +245,20 @@
                                                 </div>
                                             )}
                                         </div>
-
                                         <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3 px-2">
                                             <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{tipoVenta === 'Venta' ? 'Total a Pagar' : 'Valor Producto'}</span><span className="text-6xl font-black text-slate-800 tracking-tighter">${totalFinal}</span></div>
                                             {tipoVenta !== 'Venta' && <span className="text-[10px] font-black text-white bg-orange-500 px-3 py-1 rounded-full uppercase mb-2">Autorizado</span>}
                                             {discountPct > 0 && <span className="text-[10px] font-black text-pink-500 uppercase bg-pink-50 px-2 py-1 rounded-lg mb-2">Ahorro: ${subtotal - totalFinal}</span>}
                                         </div>
-
                                         {tipoVenta==='Venta' && (
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="flex flex-col">
-                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
-                                                    <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Dar Cambio:</label>
-                                                    <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div>
-                                                </div>
+                                                <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
+                                                <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" /></div>
+                                                <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Dar Cambio:</label>
+                                                <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm transition-colors ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div></div>
                                             </div>
                                         )}
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-lg active:scale-95 transition-all">FINALIZAR COBRO</button>
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl shadow-pink-100 active:scale-95 transition-all">FINALIZAR COBRO</button>
                                     </div>
                                 </div>
                             </div>
@@ -257,7 +267,6 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-                            {/* GESTIÓN DE CATEGORÍAS */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
                                 <div className="flex flex-wrap gap-2">
@@ -276,7 +285,6 @@
                                 </div>
                             </div>
 
-                            {/* GESTIÓN DE PERSONAL CON SELECTOR DE RANGO */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
                                 {employees.map(e => (
@@ -284,9 +292,7 @@
                                         <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex items-center gap-3">
                                             <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
-                                                <option value="admin">Administrador</option>
-                                                <option value="encargado">Encargado</option>
-                                                <option value="vendedor">Vendedor</option>
+                                                <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
                                             </select>
                                             <div className="flex items-center bg-white border rounded-xl px-2">
                                                 <span className="text-[8px] font-black text-slate-400">PIN</span>
@@ -299,7 +305,6 @@
                                 <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
                             </div>
 
-                            {/* GESTIÓN DE INVENTARIO */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
@@ -346,7 +351,6 @@
                                 }} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
                             </div>
 
-                            {/* GRÁFICAS Y ESTADÍSTICAS INTELIGENTES */}
                             <div className="grid grid-cols-2 gap-3 mb-6">
                                 <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-yellow-400">
                                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Producto Top 🌟</p>
