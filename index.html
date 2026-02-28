@@ -3,18 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Cloud POS</title>
+    <title>Michoacana Ultimate POS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
+    <style>
+        @keyframes pulse-red {
+            0%, 100% { background-color: #ef4444; }
+            50% { background-color: #f87171; }
+        }
+        .animate-alert {
+            animation: pulse-red 1.5s infinite;
+        }
+    </style>
 </head>
-<body class="bg-slate-100 font-sans select-none">
+<body class="bg-slate-50 font-sans select-none text-slate-900">
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect } = React;
 
         const App = () => {
             const [db, setDb] = useState(null);
@@ -23,27 +32,24 @@
             const [products, setProducts] = useState([]);
             const [employees, setEmployees] = useState([]);
             const [tickets, setTickets] = useState([]);
-            const [categories, setCategories] = useState(['Paletas', 'Nieve', 'Trolly', 'Extras', 'Otros']);
+            const [categories, setCategories] = useState(['Paletas', 'Nieve', 'Trolly', 'Extras', 'Venta Libre']);
             const [cart, setCart] = useState([]);
             const [discountPct, setDiscountPct] = useState(0);
             const [catActiva, setCatActiva] = useState('Paletas');
-            const [search, setSearch] = useState('');
+            const [tipoVenta, setTipoVenta] = useState('Venta');
 
             const configGuardada = localStorage.getItem('fb_config');
 
             if (!configGuardada) {
                 return (
                     <div className="flex items-center justify-center min-h-screen bg-pink-50 p-6 text-center">
-                        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border-4 border-pink-500">
-                            <h2 className="text-2xl font-black mb-2 text-pink-600 uppercase italic">Configuración</h2>
-                            <textarea id="cuadro_llaves" className="w-full h-48 p-4 border rounded-2xl mb-4 font-mono text-[10px] bg-gray-50" placeholder='Pega las llaves aquí...'></textarea>
+                        <div className="bg-white p-10 rounded-[45px] shadow-2xl w-full max-w-md border-4 border-pink-500">
+                            <h2 className="text-3xl font-black mb-6 text-pink-600 uppercase italic">Configuración</h2>
+                            <textarea id="cuadro_llaves" className="w-full h-48 p-4 border rounded-3xl mb-4 font-mono text-[10px] bg-slate-50 outline-none" placeholder="Pega las llaves aquí..."></textarea>
                             <button onClick={() => {
                                 const texto = document.getElementById('cuadro_llaves').value;
-                                if(texto.includes("apiKey")) {
-                                    localStorage.setItem('fb_config', texto);
-                                    window.location.reload();
-                                }
-                            }} className="w-full bg-pink-600 text-white py-4 rounded-2xl font-black uppercase text-xl">ACTIVAR</button>
+                                if(texto.includes("apiKey")) { localStorage.setItem('fb_config', texto); window.location.reload(); }
+                            }} className="w-full bg-pink-600 text-white py-5 rounded-3xl font-black uppercase text-xl shadow-lg">Activar Sistema</button>
                         </div>
                     </div>
                 );
@@ -64,268 +70,4 @@
                 const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubEmps = db.collection('empleados').onSnapshot(s => {
                     const emps = s.docs.map(d => ({id:d.id, ...d.data()}));
-                    if(emps.length === 0) db.collection('empleados').add({nombre: 'José', pin: '1820', rol: 'admin'});
-                    setEmployees(emps);
-                });
-                const unsubCats = db.collection('config').doc('categorias').onSnapshot(doc => {
-                    if(doc.exists) setCategories(doc.data().lista);
-                    else db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly', 'Extras', 'Otros']});
-                });
-                const hoy = new Date(); hoy.setHours(0,0,0,0);
-                const unsubTickets = db.collection('tickets').where('timestamp', '>=', hoy).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                return () => { unsubProds(); unsubEmps(); unsubCats(); unsubTickets(); };
-            }, [db]);
-
-            const totalSinDesc = cart.reduce((a, b) => a + (b.precio * b.qty), 0);
-            const totalFinal = Math.round(totalSinDesc * (1 - discountPct / 100));
-
-            const finalizarVenta = async () => {
-                const batch = db.batch();
-                const tRef = db.collection('tickets').doc();
-                batch.set(tRef, {
-                    vendedor: user.nombre, items: cart, total: totalFinal, 
-                    hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                cart.forEach(item => {
-                    if(item.id !== 'extra') batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) });
-                });
-                await batch.commit();
-                alert("Venta Guardada: $" + totalFinal); setCart([]); setDiscountPct(0);
-            };
-
-            if (view === 'login') return (
-                <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-pink-100 text-center">
-                    <h1 className="text-6xl font-black text-pink-600 mb-12 italic uppercase tracking-tighter drop-shadow-md">Michoacana</h1>
-                    <div className="grid grid-cols-2 gap-6 w-full max-w-lg">
-                        {employees.map(e => (
-                            <button key={e.id} onClick={() => {
-                                const p = prompt(`PIN para ${e.nombre}:`);
-                                if(p === e.pin) { setUser(e); setView('pos'); }
-                            }} className="bg-white p-10 rounded-[40px] shadow-xl border-b-8 border-pink-200 font-black uppercase text-gray-700 active:scale-90 transition-all text-xl">
-                                {e.nombre}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            );
-
-            return (
-                <div className="flex flex-col h-screen max-w-6xl mx-auto bg-white shadow-2xl overflow-hidden">
-                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center shadow-lg z-30">
-                        <span className="font-black italic uppercase text-2xl tracking-tighter">Michoacana</span>
-                        <div className="flex gap-8 items-center">
-                            {user.rol === 'admin' && (
-                                <div className="flex gap-8 text-4xl">
-                                    <button onClick={() => setView('pos')}>🛒</button>
-                                    <button onClick={() => setView('admin')}>📦</button>
-                                    <button onClick={() => setView('history')}>📊</button>
-                                </div>
-                            )}
-                            <button onClick={() => {setUser(null); setView('login');}} className="text-2xl bg-pink-800 p-2 rounded-full px-5">🚪</button>
-                        </div>
-                    </nav>
-
-                    {view === 'pos' && (
-                        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-                            {/* CATEGORIAS */}
-                            <div className="bg-slate-200 flex md:flex-col overflow-x-auto md:w-28 p-2 gap-2 border-r shadow-inner">
-                                {categories.map(cat => (
-                                    <button key={cat} onClick={() => setCatActiva(cat)} className={`flex-1 md:flex-none py-4 px-2 rounded-3xl font-black text-[11px] uppercase transition-all ${catActiva === cat ? 'bg-pink-600 text-white shadow-xl scale-105' : 'bg-white text-gray-400'}`}>
-                                        {cat}
-                                    </button>
-                                ))}
-                            </div>
-
-                            <div className="flex-1 p-4 overflow-y-auto bg-slate-50">
-                                <input type="text" placeholder="🔍 Buscar producto..." className="w-full p-4 rounded-2xl mb-4 border-2 border-pink-100 outline-pink-500 font-bold" onChange={(e)=>setSearch(e.target.value.toLowerCase())}/>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 content-start">
-                                    {products.filter(p => p.categoria === catActiva && p.nombre.toLowerCase().includes(search)).map(p => (
-                                        <button key={p.id} disabled={p.stock <= 0} onClick={() => {
-                                            setCart(prev => {
-                                                const ex = prev.find(i => i.id === p.id);
-                                                if(ex) return prev.map(i => i.id === p.id ? {...i, qty: i.qty+1} : i);
-                                                return [...prev, {...p, qty: 1}];
-                                            });
-                                        }} className={`p-5 rounded-[35px] shadow-sm bg-white border-2 border-transparent active:border-pink-500 relative transition-all ${p.stock <= 0 ? 'opacity-30' : 'hover:shadow-md'}`}>
-                                            <p className="font-black text-gray-800 leading-tight mb-1">{p.nombre}</p>
-                                            <p className="text-pink-600 font-black text-2xl">${p.precio}</p>
-                                            <div className="absolute top-3 right-3 bg-pink-50 px-2 py-1 rounded-full text-[10px] font-black text-pink-400 uppercase">S:{p.stock}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            <div className="w-full md:w-80 bg-white border-l p-6 flex flex-col shadow-2xl z-20">
-                                <h2 className="font-black text-xs text-slate-400 uppercase mb-4 text-center tracking-[0.3em]">CARRITO</h2>
-                                <div className="flex-1 overflow-y-auto">
-                                    {cart.map(item => (
-                                        <div key={item.id} className="flex justify-between items-center mb-4 bg-slate-50 p-3 rounded-2xl">
-                                            <div className="flex flex-col">
-                                                <span className="font-black text-gray-800 text-sm leading-none">{item.nombre}</span>
-                                                <span className="text-xs text-pink-500 font-black mt-1">x{item.qty} - ${item.precio * item.qty}</span>
-                                            </div>
-                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="bg-white text-red-500 w-10 h-10 rounded-xl font-black shadow-sm text-xl active:bg-red-500 active:text-white transition-colors">✕</button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="pt-6 border-t-4 border-slate-100">
-                                    <div className="flex gap-2 mb-4">
-                                        {[0, 10, 20, 30].map(pct => (
-                                            <button key={pct} onClick={() => setDiscountPct(pct)} className={`flex-1 py-3 rounded-2xl font-black border-2 ${discountPct===pct?'bg-pink-600 border-pink-600 text-white shadow-lg':'text-pink-400 border-pink-50'}`}>{pct}%</button>
-                                        ))}
-                                    </div>
-                                    <div className="flex justify-between font-black text-4xl mb-6 text-gray-800 tracking-tighter uppercase italic">
-                                        <span>Total</span>
-                                        <span className="text-pink-600 text-5xl">${totalFinal}</span>
-                                    </div>
-                                    <button onClick={finalizarVenta} disabled={cart.length===0} className="w-full bg-pink-600 text-white py-6 rounded-[30px] font-black shadow-xl shadow-pink-200 uppercase text-3xl active:scale-95 transition-all mb-2">COBRAR</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {view === 'admin' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8">
-                            {/* GESTIÓN DE CATEGORÍAS */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm border-2 border-slate-200">
-                                <h2 className="text-xl font-black uppercase text-slate-800 mb-4 italic">Apartados (Categorías)</h2>
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    {categories.map((cat, idx) => (
-                                        <div key={idx} className="bg-slate-100 px-4 py-2 rounded-2xl flex items-center gap-3">
-                                            <span className="font-black text-sm uppercase text-gray-600">{cat}</span>
-                                            <button onClick={()=>{
-                                                const nuevo = prompt("Nuevo nombre para "+cat, cat);
-                                                if(nuevo){
-                                                    const copia = [...categories]; copia[idx] = nuevo;
-                                                    setCategories(copia); db.collection('config').doc('categorias').set({lista: copia});
-                                                }
-                                            }} className="text-blue-400 font-bold text-xs underline">✏️</button>
-                                            <button onClick={()=>{
-                                                if(confirm("¿Borrar apartado?")) {
-                                                    const copia = categories.filter(c => c !== cat);
-                                                    setCategories(copia); db.collection('config').doc('categorias').set({lista: copia});
-                                                }
-                                            }} className="text-red-300 font-bold">✕</button>
-                                        </div>
-                                    ))}
-                                    <button onClick={()=>{
-                                        const n = prompt("Nombre del nuevo apartado:");
-                                        if(n){
-                                            const copia = [...categories, n];
-                                            setCategories(copia); db.collection('config').doc('categorias').set({lista: copia});
-                                        }
-                                    }} className="bg-pink-600 text-white px-4 py-2 rounded-2xl font-black text-sm">+ AGREGAR</button>
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-4 bg-white p-8 rounded-[40px] shadow-sm border-2 border-pink-50">
-                                <h2 className="text-3xl font-black uppercase italic text-pink-600 tracking-tighter">Nuevo Producto</h2>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <input id="new-name" placeholder="Nombre (Ej: Paleta de Coco)" className="p-4 border-2 rounded-2xl font-bold outline-pink-500 bg-slate-50" />
-                                    <input id="new-price" type="number" placeholder="Precio $" className="p-4 border-2 rounded-2xl font-bold outline-pink-500 bg-slate-50" />
-                                    <input id="new-stock" type="number" placeholder="Stock" className="p-4 border-2 rounded-2xl font-bold outline-pink-500 bg-slate-50" />
-                                    <select id="new-cat" className="p-4 border-2 rounded-2xl font-bold bg-white outline-pink-500 uppercase text-xs">
-                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
-                                </div>
-                                <button onClick={() => {
-                                    const n = document.getElementById('new-name').value;
-                                    const p = document.getElementById('new-price').value;
-                                    const s = document.getElementById('new-stock').value;
-                                    const c = document.getElementById('new-cat').value;
-                                    if(n && p) {
-                                        db.collection('productos').add({nombre: n, precio: Number(p), stock: Number(s), categoria: c});
-                                        document.getElementById('new-name').value = ''; document.getElementById('new-price').value = '';
-                                    }
-                                }} className="bg-green-500 text-white py-5 rounded-[30px] font-black shadow-xl uppercase text-xl mt-2">Guardar Producto</button>
-                            </div>
-
-                            <div className="space-y-4">
-                                <h3 className="font-black text-slate-400 uppercase text-xs tracking-[0.5em] ml-4">Inventario Actual</h3>
-                                {products.sort((a,b) => a.categoria.localeCompare(b.categoria)).map(p => (
-                                    <div key={p.id} className="bg-white p-5 rounded-[30px] shadow-sm flex items-center justify-between border-l-[15px] border-pink-400">
-                                        <div className="flex-1">
-                                            <p className="text-[10px] font-black text-pink-400 uppercase tracking-widest">{p.categoria}</p>
-                                            <p className="font-black text-gray-800 text-lg uppercase leading-none mb-1">{p.nombre}</p>
-                                            <p className="text-pink-600 font-black text-2xl">$ {p.precio}</p>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-center bg-slate-50 p-2 rounded-2xl">
-                                                <p className="text-[9px] font-black text-gray-400 uppercase">Stock</p>
-                                                <input type="number" className="w-16 bg-transparent text-center font-black text-xl" defaultValue={p.stock} onBlur={(e) => db.collection('productos').doc(p.id).update({stock: Number(e.target.value)})} />
-                                            </div>
-                                            <button onClick={() => {if(confirm("¿Borrar?")) db.collection('productos').doc(p.id).delete()}} className="bg-red-50 text-red-300 w-12 h-12 rounded-2xl flex items-center justify-center text-2xl">🗑️</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="bg-slate-800 p-8 rounded-[40px] text-white">
-                                <h2 className="text-2xl font-black uppercase italic mb-6">Personal</h2>
-                                <div className="grid gap-4">
-                                    {employees.map(e => (
-                                        <div key={e.id} className="bg-slate-700 p-5 rounded-[25px] flex justify-between items-center shadow-lg border-b-4 border-slate-900">
-                                            <div>
-                                                <p className="font-black text-xl uppercase italic">{e.nombre}</p>
-                                                <button onClick={() => {
-                                                    const nPin = prompt("Nuevo PIN:");
-                                                    if(nPin) db.collection('empleados').doc(e.id).update({pin: nPin});
-                                                }} className="text-pink-400 font-black text-xs uppercase tracking-tighter">🔒 Cambiar PIN: {e.pin}</button>
-                                            </div>
-                                            <button onClick={() => {if(confirm("¿Despedir?")) db.collection('empleados').doc(e.id).delete()}} className="text-red-400 text-2xl px-4 font-black">✕</button>
-                                        </div>
-                                    ))}
-                                    <button onClick={() => {
-                                        const n = prompt("Nombre:"); const pin = prompt("PIN:");
-                                        if(n && pin) db.collection('empleados').add({nombre: n, pin, rol: 'ventas'});
-                                    }} className="w-full bg-white text-slate-800 py-4 rounded-[25px] font-black uppercase text-sm mt-4 shadow-xl">+ Contratar</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {view === 'history' && (
-                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100">
-                            <div className="bg-pink-600 p-10 rounded-[50px] mb-10 text-white shadow-2xl shadow-pink-200 text-center relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-10 text-9xl italic font-black">POS</div>
-                                <p className="text-sm uppercase font-black mb-1 opacity-80 tracking-widest italic">Ventas Totales Hoy</p>
-                                <p className="text-8xl font-black tracking-tighter">${tickets.reduce((a,b)=>a+b.total, 0)}</p>
-                            </div>
-                            
-                            {/* VENTAS POR EMPLEADO */}
-                            <div className="grid grid-cols-2 gap-4 mb-8">
-                                {employees.map(emp => {
-                                    const totalEmp = tickets.filter(t => t.vendedor === emp.nombre).reduce((a,b)=>a+b.total, 0);
-                                    return (
-                                        <div key={emp.id} className="bg-white p-5 rounded-3xl shadow-sm border-b-4 border-blue-100">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase">{emp.nombre}</p>
-                                            <p className="text-2xl font-black text-gray-800">${totalEmp}</p>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            <div className="space-y-4 pb-20">
-                                <h3 className="font-black text-slate-400 uppercase text-xs tracking-[0.5em] ml-4">Historial de Tickets</h3>
-                                {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className="bg-white p-6 rounded-[35px] shadow-sm flex justify-between items-center border-r-[15px] border-green-500">
-                                        <div>
-                                            <p className="font-black text-gray-800 text-lg leading-tight italic uppercase">{t.hora} - {t.vendedor}</p>
-                                            <p className="text-[11px] text-gray-400 font-black uppercase tracking-tighter">{t.items.map(i=>`${i.nombre}(${i.qty})`).join(', ')}</p>
-                                        </div>
-                                        <p className="font-black text-gray-800 text-3xl">${t.total}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+                    if(emps.length === 0) db.collection('empleados').add({nombre: 'JOSÉ', pin: '1820',
