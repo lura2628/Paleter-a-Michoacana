@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Edición Total</title>
+    <title>Michoacana POS - Maestría</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -32,12 +32,13 @@
             const [employees, setEmployees] = useState([]);
             const [tickets, setTickets] = useState([]);
             const [cortes, setCortes] = useState([]);
-            const [categories] = useState(['Paletas', 'Nieve', 'Trolly', 'Venta Libre']);
+            const [categories, setCategories] = useState(['Paletas', 'Nieve', 'Trolly', 'Venta Libre']);
             const [cart, setCart] = useState([]);
             const [discountPct, setDiscountPct] = useState(0);
             const [catActiva, setCatActiva] = useState('Paletas');
             const [showCart, setShowCart] = useState(false);
             const [pagoCon, setPagoCon] = useState('');
+            const [tipoVenta, setTipoVenta] = useState('Venta');
 
             useEffect(() => {
                 const config = JSON.parse(localStorage.getItem('fb_config'));
@@ -52,32 +53,35 @@
                 const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(15).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                return () => { u1(); u2(); u3(); u4(); };
+                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(10).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
+                    if(doc.exists) setCategories(doc.data().lista);
+                    else db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly', 'Venta Libre']});
+                });
+                return () => { u1(); u2(); u3(); u4(); u5(); };
             }, [db]);
 
             const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
-            const totalFinal = Math.round(subtotal * (1 - discountPct / 100));
+            const totalFinal = tipoVenta === 'Venta' ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
             const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
-            const totalCajaActual = tickets.reduce((a,b)=>a+b.total, 0);
+            const totalCajaActual = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
 
             const finalizarOperacion = async () => {
                 const batch = db.batch();
-                const tRef = db.collection('tickets').doc();
-                batch.set(tRef, {
+                batch.set(db.collection('tickets').doc(), {
                     vendedor: user.nombre, items: cart, total: totalFinal, 
-                    descuento: discountPct, cortado: false,
+                    descuento: discountPct, cortado: false, tipo: tipoVenta,
                     hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
-                cart.forEach(item => { if(item.id !== 'libre') batch.update(db.collection('productos').doc(item.id), { stock: firebase.firestore.FieldValue.increment(-item.qty) }); });
+                cart.forEach(i => { if(i.id !== 'libre') batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(-i.qty) }); });
                 await batch.commit();
-                setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon('');
+                setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta');
             };
 
-            const agregarVentaLibre = () => {
+            const agregarLibre = () => {
                 const p = prompt("Precio:");
-                const n = prompt("Concepto:");
+                const n = prompt("Sabor/Concepto:");
                 if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1}]); setShowCart(true); }
             };
 
@@ -91,10 +95,7 @@
                 const s = prompt("Stock inicial:");
                 if(n && p && s) {
                     db.collection('productos').add({
-                        nombre: n.toUpperCase(),
-                        precio: Number(p),
-                        stock: Number(s),
-                        categoria: catActiva // Se agrega a la categoría que estés viendo
+                        nombre: n.toUpperCase(), precio: Number(p), stock: Number(s), categoria: catActiva
                     });
                 }
             };
@@ -108,7 +109,7 @@
                                 const p = prompt(`PIN para ${e.nombre}:`);
                                 if(p === e.pin) { setUser(e); setView('pos'); }
                             }} className="bg-white p-6 rounded-[30px] shadow-lg font-black uppercase text-gray-700 active:scale-95 transition-all">
-                                {e.nombre}<p className="text-[10px] text-pink-400 font-bold uppercase">{e.rol}</p>
+                                {e.nombre}<p className="text-[10px] text-pink-400 font-bold uppercase tracking-widest">{e.rol}</p>
                             </button>
                         ))}
                     </div>
@@ -123,7 +124,7 @@
                             <button onClick={() => setView('pos')} className="text-2xl">🛒</button>
                             {user.rol === 'admin' && <button onClick={() => setView('history')} className="text-2xl">📊</button>}
                             {user.rol === 'admin' && <button onClick={() => setView('admin')} className="text-2xl">📦</button>}
-                            <button onClick={() => {setUser(null); setView('login');}} className="bg-pink-900 px-3 py-1 rounded-full text-[10px] font-black uppercase">Salir</button>
+                            <button onClick={() => {setUser(null); setView('login');}} className="bg-pink-900 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter">Salir</button>
                         </div>
                     </nav>
 
@@ -131,8 +132,8 @@
                         <div className="flex flex-col flex-1 overflow-hidden">
                             <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
                                 {categories.map(cat => (
-                                    <button key={cat} onClick={() => cat === 'Venta Libre' ? agregarVentaLibre() : setCatActiva(cat)} 
-                                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap ${catActiva === cat ? 'bg-pink-600 text-white' : 'bg-white text-gray-400'}`}>{cat}</button>
+                                    <button key={cat} onClick={() => cat === 'Venta Libre' ? agregarLibre() : setCatActiva(cat)} 
+                                    className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap ${catActiva === cat ? 'bg-pink-600 text-white' : 'bg-white text-gray-400'}`}>{cat === 'Venta Libre' ? '+ Libre' : cat}</button>
                                 ))}
                             </div>
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start pb-24 scroll-hide">
@@ -144,7 +145,7 @@
                                             return [...prev, {...p, qty: 1}];
                                         });
                                         setShowCart(true);
-                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-2 border-transparent active:border-pink-500 transition-all hover:shadow-md">
+                                    }} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-2 border-transparent active:border-pink-500 transition-all">
                                         <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1 truncate">{p.nombre}</p>
                                         <p className="text-pink-600 font-black text-xl">${p.precio}</p>
                                         <div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock <= 10 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-300'}`}>{p.stock}</div>
@@ -153,33 +154,50 @@
                             </div>
 
                             <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_40px_rgba(0,0,0,0.2)] z-40 flex flex-col max-h-[85vh] ${!showCart ? 'cart-hidden' : ''}`}>
-                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">RESUMEN</span></button>
+                                <button onClick={() => setShowCart(!showCart)} className="w-full py-3 flex flex-col items-center"><div className="w-12 h-1 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase">CARRITO ({cart.length})</span></button>
                                 <div className="p-5 overflow-y-auto flex-1">
                                     {cart.map(item => (
                                         <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-3 rounded-2xl border">
-                                            <div className="flex-1 pr-2"><p className="font-black text-xs uppercase text-slate-700">{item.nombre}</p></div>
+                                            <div className="flex-1 pr-2"><p className="font-black text-xs uppercase text-slate-700 leading-tight">{item.nombre}</p><p className="text-pink-500 font-bold text-[10px]">${item.precio} c/u</p></div>
                                             <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-xl border shadow-sm">
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400 text-lg">-</button>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400">-</button>
                                                 <span className="font-black text-sm">{item.qty}</span>
-                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400 text-lg">+</button>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400">+</button>
                                             </div>
                                             <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="ml-3 text-red-200">✕</button>
                                         </div>
                                     ))}
                                     <div className="mt-2 p-5 bg-slate-100 rounded-[35px] space-y-4">
                                         <div className="flex justify-between items-center">
-                                            <div className="flex gap-1">
-                                                {[0, 10, 30].map(pct => (
-                                                    <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[10px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
-                                                ))}
+                                            {(user.rol === 'admin' || user.rol === 'encargado') ? (
+                                                <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2 rounded-xl font-black text-[10px] uppercase text-pink-600 border shadow-sm outline-none">
+                                                    <option value="Venta">💰 Venta Normal</option>
+                                                    <option value="Merma">🚫 Merma (Dañado)</option>
+                                                    <option value="Consumo">🍦 Consumo Propio</option>
+                                                </select>
+                                            ) : <span className="font-black text-[10px] uppercase text-slate-400 ml-2">Venta Directa</span>}
+
+                                            {tipoVenta === 'Venta' && (
+                                                <div className="flex gap-1">
+                                                    {[0, 10, 30].map(pct => (
+                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[10px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3">
+                                            <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{tipoVenta === 'Venta' ? 'Total' : 'Valor'}</span><span className="text-5xl font-black text-slate-800 tracking-tighter">${totalFinal}</span></div>
+                                            {tipoVenta !== 'Venta' && <span className="text-[10px] font-black text-white bg-orange-500 px-3 py-1 rounded-full uppercase mb-2">Autorizado</span>}
+                                        </div>
+                                        {tipoVenta==='Venta' && (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="flex flex-col"><label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1">Pago Con:</label>
+                                                <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-3 bg-white rounded-xl font-black text-xl outline-none border-2 border-transparent focus:border-pink-300 shadow-inner" /></div>
+                                                <div className="flex flex-col"><label className="text-[8px] font-black text-slate-400 uppercase ml-2 mb-1">Cambio:</label>
+                                                <div className={`p-3 rounded-xl font-black text-xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '...'}</div></div>
                                             </div>
-                                            <div className="text-right"><p className="text-[10px] font-black text-slate-400 uppercase">Total</p><p className="text-5xl font-black text-slate-800 tracking-tighter">${totalFinal}</p></div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="Pagó con..." className="p-3 bg-white rounded-xl font-black text-xl outline-none border-2 border-transparent focus:border-pink-300 shadow-inner" />
-                                            <div className={`p-3 rounded-xl font-black text-xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '...'}</div>
-                                        </div>
-                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-2xl bg-pink-600 text-white font-black text-2xl uppercase shadow-lg active:scale-95 transition-all">TERMINAR COBRO</button>
+                                        )}
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-4 rounded-2xl bg-pink-600 text-white font-black text-2xl uppercase shadow-lg active:scale-95 transition-all">FINALIZAR ✅</button>
                                     </div>
                                 </div>
                             </div>
@@ -188,6 +206,34 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
+                            {/* GESTION DE CATEGORIAS */}
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
+                                <div className="flex flex-wrap gap-2">
+                                    {categories.map((cat, idx) => (
+                                        <div key={idx} className="bg-slate-50 px-3 py-2 rounded-2xl flex items-center gap-2 border">
+                                            <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
+                                            {cat !== 'Venta Libre' && (
+                                                <>
+                                                    <button onClick={()=>{
+                                                        const nuevo = prompt("Nuevo nombre:", cat);
+                                                        if(nuevo){ const c = [...categories]; c[idx] = nuevo.trim(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
+                                                    }} className="text-blue-500 text-xs ml-2">✏️</button>
+                                                    <button onClick={()=>{
+                                                        if(confirm("¿Borrar apartado?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
+                                                    }} className="text-red-300 text-xs ml-1">✕</button>
+                                                </>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button onClick={()=>{
+                                        const n = prompt("Nombre del nuevo apartado:");
+                                        if(n){ const c = [...categories, n.trim()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }
+                                    }} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-3 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
+                                </div>
+                            </div>
+
+                            {/* GESTION DE EMPLEADOS */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal</h2>
                                 {employees.map(e => (
@@ -195,13 +241,14 @@
                                         <input className="font-black uppercase text-xs bg-transparent w-full outline-none focus:text-pink-500" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
                                         <div className="flex items-center gap-2">
                                             <input className="w-14 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                            <button onClick={() => confirm("¿Borrar?") && db.collection('empleados').doc(e.id).delete()} className="text-red-200 ml-2">✕</button>
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 ml-2">✕</button>
                                         </div>
                                     </div>
                                 ))}
                                 <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
                             </div>
 
+                            {/* GESTION DE INVENTARIO */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
@@ -226,6 +273,7 @@
                                 <button onClick={handleAddProduct} className="w-full py-3 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-500 rounded-2xl font-black text-[10px] uppercase tracking-widest">+ Añadir a {catActiva}</button>
                             </div>
 
+                            {/* CORTES */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">📑 Archivo de Cortes</h2>
                                 {cortes.map(c => (
@@ -244,9 +292,9 @@
                                 <p className="text-[10px] font-black opacity-70 uppercase mb-2">Total en Caja</p>
                                 <p className="text-7xl font-black tracking-tighter mb-4">${totalCajaActual}</p>
                                 <button onClick={async () => {
-                                    if(!confirm(`¿Corte por $${totalCajaActual}?`)) return;
+                                    if(!confirm(`¿Hacer corte de caja por $${totalCajaActual}?`)) return;
                                     const resumen = {};
-                                    tickets.forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
+                                    tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
                                     await db.collection('cortes').add({
                                         total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString(),
                                         hora: new Date().toLocaleTimeString(), detalle_productos: resumen,
@@ -259,9 +307,9 @@
                             </div>
                             <div className="space-y-3 pb-20">
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className="bg-white p-4 rounded-[25px] border-r-8 border-green-500 shadow-sm flex justify-between items-center">
+                                    <div key={t.id} className={`bg-white p-4 rounded-[25px] border-r-8 shadow-sm flex justify-between items-center ${t.tipo==='Venta'?'border-green-500':t.tipo==='Merma'?'border-red-400 opacity-70':'border-blue-400 opacity-70'}`}>
                                         <div className="flex-1 pr-2">
-                                            <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor}</p>
+                                            <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor} {t.tipo !== 'Venta' && `(${t.tipo})`}</p>
                                             <p className="text-[9px] text-slate-400 font-bold uppercase leading-tight truncate">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
                                         </div>
                                         <p className="text-2xl font-black">${t.total}</p>
