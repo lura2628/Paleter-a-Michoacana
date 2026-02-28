@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Control Total</title>
+    <title>Michoacana Pro - Corte Detallado</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -52,7 +52,7 @@
                 const unsubProds = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubEmps = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const unsubTickets = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const unsubCortes = db.collection('cortes').orderBy('timestamp', 'desc').limit(10).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const unsubCortes = db.collection('cortes').orderBy('timestamp', 'desc').limit(15).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 return () => { unsubProds(); unsubEmps(); unsubTickets(); unsubCortes(); };
             }, [db]);
 
@@ -76,14 +76,30 @@
             };
 
             const hacerCorteCaja = async () => {
-                if(!confirm(`¿Hacer corte por $${totalCajaActual}? Las ventas actuales se archivarán.`)) return;
+                if(!confirm(`¿Hacer corte por $${totalCajaActual}? Se guardará el detalle de productos vendidos.`)) return;
+                
+                // Resumen de qué se vendió
+                const resumenProd = {};
+                tickets.forEach(t => {
+                    t.items.forEach(item => {
+                        resumenProd[item.nombre] = (resumenProd[item.nombre] || 0) + item.qty;
+                    });
+                });
+
                 const batch = db.batch();
                 batch.set(db.collection('cortes').doc(), {
-                    fecha: new Date().toLocaleDateString(), hora: new Date().toLocaleTimeString(),
-                    total: totalCajaActual, responsable: user.nombre, timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    fecha: new Date().toLocaleDateString(),
+                    hora: new Date().toLocaleTimeString(),
+                    total: totalCajaActual,
+                    responsable: user.nombre,
+                    detalle_productos: resumenProd,
+                    cantidad_tickets: tickets.length,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
+
                 tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), { cortado: true }));
                 await batch.commit();
+                alert("Corte guardado con éxito.");
             };
 
             if (view === 'login') return (
@@ -150,24 +166,9 @@
                                                 <span className="font-black text-sm">{item.qty}</span>
                                                 <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400">+</button>
                                             </div>
-                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="ml-3 text-red-200">✕</button>
                                         </div>
                                     ))}
                                     <div className="mt-2 p-4 bg-slate-100 rounded-[30px] space-y-4">
-                                        <div className="flex justify-between">
-                                            {(user.rol === 'admin' || user.rol === 'encargado') && (
-                                                <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2 rounded-xl font-black text-[10px] uppercase text-pink-600 border">
-                                                    <option value="Venta">Venta</option><option value="Merma">Merma</option><option value="Consumo">Consumo</option>
-                                                </select>
-                                            )}
-                                            {tipoVenta==='Venta' && (
-                                                <div className="flex gap-1">
-                                                    {[0, 10, 30].map(pct => (
-                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-3 py-1 rounded-lg font-black text-[10px] border ${discountPct===pct?'bg-pink-600 text-white':'bg-white text-slate-400'}`}>{pct}%</button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
                                         <div className="flex justify-between items-end"><div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase">Total</span><span className="text-5xl font-black text-slate-800">${totalFinal}</span></div></div>
                                         {tipoVenta==='Venta' && (
                                             <div className="grid grid-cols-2 gap-3">
@@ -184,64 +185,59 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10">
-                            {/* SECCIÓN EMPLEADOS */}
+                            {/* HISTORIAL DE CORTES CON DETALLE */}
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 tracking-tighter">📑 Historial de Cortes Detallados</h2>
+                                <div className="space-y-4">
+                                    {cortes.map(c => (
+                                        <div key={c.id} className="p-4 bg-slate-50 rounded-2xl border-l-4 border-pink-500 shadow-sm">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="font-black text-xs uppercase">{c.fecha} - {c.hora}</p>
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase">Hecho por: {c.responsable}</p>
+                                                </div>
+                                                <p className="text-2xl font-black text-green-600">${c.total}</p>
+                                            </div>
+                                            <div className="bg-white p-3 rounded-xl border border-slate-100">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase mb-1 border-b pb-1">Productos Vendidos:</p>
+                                                {c.detalle_productos && Object.entries(c.detalle_productos).map(([nom, cant]) => (
+                                                    <div key={nom} className="flex justify-between text-[10px] font-bold py-0.5 border-b border-slate-50 last:border-0">
+                                                        <span className="uppercase">{nom}</span>
+                                                        <span className="text-pink-600">x{cant}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* GESTIÓN DE PERSONAL */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                 <h2 className="font-black uppercase text-pink-600 mb-4">👥 Personal (Nombre y PIN)</h2>
-                                <div className="space-y-3">
-                                    {employees.map(e => (
-                                        <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border">
-                                            <div className="flex-1">
-                                                <input className="font-black uppercase text-sm bg-transparent w-full outline-none" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
-                                                <p className="text-[9px] font-bold text-slate-400 italic">Puesto: {e.rol}</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <input className="w-16 p-1 text-center font-black bg-white border rounded-lg text-xs" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                                <button onClick={() => confirm("¿Eliminar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300">✕</button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-xs">+ NUEVO EMPLEADO</button>
-                                </div>
-                            </div>
-
-                            {/* SECCIÓN PRODUCTOS */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4">🍦 Inventario (Nombre, Stock y Precio)</h2>
-                                <div className="space-y-4">
-                                    {products.map(p => (
-                                        <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border">
-                                            <input className="font-black uppercase text-sm bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>db.collection('productos').doc(p.id).update({nombre: x.target.value.toUpperCase()})} />
-                                            <div className="flex justify-between items-center">
-                                                <div className="flex gap-4">
-                                                    <div className="text-center"><p className="text-[8px] font-black text-slate-400">STOCK</p><input type="number" className="w-16 p-1 text-center font-black bg-white border rounded-lg" defaultValue={p.stock} onBlur={(x)=>db.collection('productos').doc(p.id).update({stock: Number(x.target.value)})} /></div>
-                                                    <div className="text-center"><p className="text-[8px] font-black text-slate-400">PRECIO $</p><input type="number" className="w-16 p-1 text-center font-black bg-white border rounded-lg text-pink-600" defaultValue={p.precio} onBlur={(x)=>db.collection('productos').doc(p.id).update({precio: Number(x.target.value)})} /></div>
-                                                </div>
-                                                <button onClick={() => confirm("¿Borrar sabor?") && db.collection('productos').doc(p.id).delete()} className="text-red-300">✕</button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    <div className="pt-4 border-t border-dashed mt-4">
-                                        <p className="font-black text-[10px] text-slate-400 mb-2 uppercase">Añadir Sabor Nuevo:</p>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <input id="n-nom" className="p-2 border rounded-xl text-xs uppercase font-black" placeholder="Sabor" />
-                                            <input id="n-pre" type="number" className="p-2 border rounded-xl text-xs font-black" placeholder="Precio" />
-                                            <input id="n-sto" type="number" className="p-2 border rounded-xl text-xs font-black" placeholder="Stock" />
-                                            <button onClick={()=>{
-                                                const n=document.getElementById('n-nom').value; const p=document.getElementById('n-pre').value; const s=document.getElementById('n-sto').value;
-                                                if(n&&p) db.collection('productos').add({nombre:n.toUpperCase(), precio:Number(p), stock:Number(s), categoria:'Paletas'});
-                                            }} className="bg-green-500 text-white rounded-xl font-black text-[10px]">GUARDAR</button>
-                                        </div>
+                                {employees.map(e => (
+                                    <div key={e.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border mb-2">
+                                        <input className="font-black uppercase text-sm bg-transparent w-full outline-none" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                        <input className="w-16 p-1 text-center font-black bg-white border rounded-lg text-xs ml-2" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                        <button onClick={() => confirm("¿Eliminar?") && db.collection('empleados').doc(e.id).delete()} className="ml-2 text-red-300">✕</button>
                                     </div>
-                                </div>
+                                ))}
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-2 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-xs">+ NUEVO EMPLEADO</button>
                             </div>
 
-                            {/* HISTORIAL DE CORTES */}
+                            {/* GESTIÓN DE PRODUCTOS */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                <h2 className="font-black uppercase text-pink-600 mb-4">📑 Cortes Pasados</h2>
-                                {cortes.map(c => (
-                                    <div key={c.id} className="flex justify-between p-3 border-b text-[11px] font-bold">
-                                        <span>{c.fecha} ({c.responsable})</span>
-                                        <span className="text-green-600">${c.total}</span>
+                                <h2 className="font-black uppercase text-pink-600 mb-4">🍦 Inventario</h2>
+                                {products.map(p => (
+                                    <div key={p.id} className="p-3 bg-slate-50 rounded-2xl border mb-3">
+                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-pink-100" defaultValue={p.nombre} onBlur={(x)=>db.collection('productos').doc(p.id).update({nombre: x.target.value.toUpperCase()})} />
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex gap-2">
+                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400">STOCK</p><input type="number" className="w-12 p-1 text-center font-black bg-white border rounded-lg text-xs" defaultValue={p.stock} onBlur={(x)=>db.collection('productos').doc(p.id).update({stock: Number(x.target.value)})} /></div>
+                                                <div className="text-center"><p className="text-[7px] font-black text-slate-400">PRECIO</p><input type="number" className="w-12 p-1 text-center font-black bg-white border rounded-lg text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>db.collection('productos').doc(p.id).update({precio: Number(x.target.value)})} /></div>
+                                            </div>
+                                            <button onClick={() => confirm("¿Borrar?") && db.collection('productos').doc(p.id).delete()} className="text-red-200">✕</button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -251,16 +247,21 @@
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100">
                             <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 italic">Caja del Turno</p>
+                                <p className="text-[10px] font-black opacity-70 uppercase mb-2">Total en Caja Ahora</p>
                                 <p className="text-7xl font-black tracking-tighter mb-4">${totalCajaActual}</p>
-                                {user.rol === 'admin' && <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Cerrar Caja / Hacer Corte 💰</button>}
+                                {user.rol === 'admin' && <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-lg active:scale-95">Realizar Corte del Día 💰</button>}
                             </div>
                             <div className="space-y-3 pb-20">
+                                <p className="font-black uppercase text-slate-400 text-[10px] ml-4">Ventas sin cortar ({tickets.length}):</p>
                                 {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className="bg-white p-4 rounded-[25px] border-r-8 border-green-500 shadow-sm">
-                                        <p className="font-black text-[11px]">{t.hora} - {t.vendedor}</p>
-                                        <p className="text-[9px] text-slate-400 uppercase font-bold">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
-                                        <p className="text-2xl font-black">${t.total}</p>
+                                    <div key={t.id} className={`bg-white p-4 rounded-[25px] border-r-8 shadow-sm ${t.tipo==='Venta'?'border-green-500':'border-orange-400'}`}>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="font-black text-[11px] uppercase">{t.hora} - {t.vendedor}</p>
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase italic">{t.items.map(i=>`${i.nombre} x${i.qty}`).join(', ')}</p>
+                                            </div>
+                                            <p className="text-2xl font-black">${t.total}</p>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
