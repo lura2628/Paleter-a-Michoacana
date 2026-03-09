@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Auditoría Mensual Inteligente</title>
+    <title>Michoacana Pro - Limpieza Total</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -26,12 +26,11 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        const TIEMPO_SESION = 5 * 60 * 60 * 1000; // 5 Horas en milisegundos
+        const TIEMPO_SESION = 5 * 60 * 60 * 1000; // 5 Horas
 
         const App = () => {
             const [db, setDb] = useState(null);
             
-            // SESIÓN INTELIGENTE CON LÍMITE DE 5 HORAS
             const [user, setUser] = useState(() => {
                 try { 
                     const saved = localStorage.getItem('michoacana_user'); 
@@ -71,7 +70,6 @@
             const [selectedCorte, setSelectedCorte] = useState(null);
             const [corteTickets, setCorteTickets] = useState([]);
 
-            // Comprobar expiración al volver de segundo plano
             useEffect(() => {
                 const handleVisibility = () => {
                     if (document.visibilityState === 'visible') {
@@ -108,7 +106,7 @@
                 
                 const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
                     if(doc.exists) {
-                        setCategories(doc.data().lista.filter(c => c !== 'Venta Libre'));
+                        setCategories(doc.data().lista);
                     } else {
                         db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly']});
                     }
@@ -127,7 +125,6 @@
                 }
             }, [selectedCorte, db]);
 
-            // AGRUPACIÓN MENSUAL CON CÁLCULO DE TOTALES
             const agruparCortesPorMes = () => {
                 const grupos = {};
                 cortes.forEach(c => {
@@ -267,11 +264,6 @@
                 });
             };
 
-            const agregarLibre = () => {
-                const p = prompt("Precio:"); const n = prompt("Concepto:");
-                if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1, categoria: 'Venta Libre'}]); setShowCart(true); }
-            };
-
             if (needConfig) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
@@ -353,7 +345,6 @@
                                         {cat}
                                     </button>
                                 ))}
-                                <button onClick={() => agregarLibre()} className="px-5 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap bg-white text-gray-400">+ Libre</button>
                             </div>
                             
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 pb-28 scroll-hide">
