@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Categorías Arregladas</title>
+    <title>Michoacana Pro - Inteligencia de Negocios</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         @keyframes pulse-red { 0%, 100% { background-color: #ef4444; } 50% { background-color: #f87171; } }
         @keyframes pulse-blue { 0%, 100% { background-color: #3b82f6; } 50% { background-color: #93c5fd; } }
@@ -24,7 +25,7 @@
 <body class="bg-slate-100 font-sans select-none text-slate-900">
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         const TIEMPO_SESION = 5 * 60 * 60 * 1000; // 5 Horas
 
@@ -69,6 +70,10 @@
             const [isListening, setIsListening] = useState(false);
             const [selectedCorte, setSelectedCorte] = useState(null);
             const [corteTickets, setCorteTickets] = useState([]);
+            
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+            const [tipoGrafica, setTipoGrafica] = useState('dia'); // dia, mes, producto, vendedor, hora
 
             useEffect(() => {
                 const handleVisibility = () => {
@@ -102,11 +107,11 @@
                 const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(100).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(300).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 
                 const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
                     if(doc.exists) {
-                        setCategories(doc.data().lista);
+                        setCategories(doc.data().lista.filter(c => c !== 'Venta Libre'));
                     } else {
                         db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly']});
                     }
@@ -124,6 +129,104 @@
                     });
                 }
             }, [selectedCorte, db]);
+
+            // LÓGICA DE LAS GRÁFICAS MULTIPLES
+            useEffect(() => {
+                if (view === 'history' && chartRef.current) {
+                    if (chartInstance.current) chartInstance.current.destroy();
+
+                    let labels = [];
+                    let data = [];
+                    let labelName = 'Ventas ($)';
+
+                    if (tipoGrafica === 'mes') {
+                        const datosMes = {};
+                        cortes.forEach(c => {
+                            const partes = c.fecha.split('/');
+                            if(partes.length === 3) {
+                                const mesAnio = `${partes[1]}/${partes[2]}`;
+                                datosMes[mesAnio] = (datosMes[mesAnio] || 0) + c.total;
+                            }
+                        });
+                        const sortedKeys = Object.keys(datosMes).sort((a,b) => {
+                            const [ma, ya] = a.split('/');
+                            const [mb, yb] = b.split('/');
+                            return new Date(ya, ma-1) - new Date(yb, mb-1);
+                        });
+                        labels = sortedKeys.map(k => {
+                            const [m, y] = k.split('/');
+                            return new Date(y, m-1).toLocaleDateString('es-MX', {month:'short'}).toUpperCase() + ' ' + y;
+                        });
+                        data = sortedKeys.map(k => datosMes[k]);
+                        
+                    } else if (tipoGrafica === 'dia') {
+                        const datosDia = {};
+                        cortes.forEach(c => datosDia[c.fecha] = (datosDia[c.fecha] || 0) + c.total);
+                        const sortedKeys = Object.keys(datosDia).sort((a,b) => {
+                            const [da, ma, ya] = a.split('/');
+                            const [db, mb, yb] = b.split('/');
+                            return new Date(ya, ma-1, da) - new Date(yb, mb-1, db);
+                        }).slice(-15); 
+                        labels = sortedKeys.map(k => k.slice(0,5)); 
+                        data = sortedKeys.map(k => datosDia[k]);
+                        
+                    } else if (tipoGrafica === 'producto') {
+                        const aggProd = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => aggProd[i.nombre] = (aggProd[i.nombre]||0) + i.qty));
+                        cortes.forEach(c => {
+                            if(c.detalle_productos) Object.keys(c.detalle_productos).forEach(k => aggProd[k] = (aggProd[k]||0) + c.detalle_productos[k]);
+                        });
+                        const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10); // Top 10
+                        labels = sorted.map(x => x[0].length > 10 ? x[0].substring(0,10)+'...' : x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Unidades Vendidas';
+                        
+                    } else if (tipoGrafica === 'vendedor') {
+                        const aggVend = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total);
+                        cortes.forEach(c => {
+                            if(c.detalle_vendedores) Object.keys(c.detalle_vendedores).forEach(k => aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k]);
+                        });
+                        const sorted = Object.entries(aggVend).sort((a,b)=>b[1]-a[1]);
+                        labels = sorted.map(x => x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Ventas Acumuladas ($)';
+                        
+                    } else if (tipoGrafica === 'hora') {
+                        const aggHora = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                            const h = t.hora.split(':')[0] + ':00';
+                            aggHora[h] = (aggHora[h]||0) + t.total;
+                        });
+                        cortes.forEach(c => {
+                            if(c.detalle_horas) Object.keys(c.detalle_horas).forEach(k => aggHora[k] = (aggHora[k]||0) + c.detalle_horas[k]);
+                        });
+                        const sorted = Object.entries(aggHora).sort((a,b)=> parseInt(a[0]) - parseInt(b[0]));
+                        labels = sorted.map(x => x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Picos de Venta ($)';
+                    }
+
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new window.Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: labelName,
+                                data: data,
+                                backgroundColor: '#ec4899',
+                                borderRadius: 6,
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } }
+                        }
+                    });
+                }
+            }, [view, cortes, tickets, tipoGrafica]);
 
             const agruparCortesPorMes = () => {
                 const grupos = {};
@@ -177,7 +280,6 @@
                 const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
             }
 
-            // Los productos se consideran huérfanos si su categoría no existe en la lista de apartados
             const orphanedProducts = products.filter(p => !categories.includes(p.categoria));
 
             const agregarAlCarrito = (producto) => {
@@ -208,15 +310,28 @@
 
             const hacerCorteCaja = async () => {
                 if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
-                const resumen = {};
-                tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty));
+                
+                // Nuevos diccionarios para guardar horas y vendedores históricos
+                const resumenProd = {};
+                const resumenVend = {};
+                const resumenHora = {};
+
+                tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                    resumenVend[t.vendedor] = (resumenVend[t.vendedor] || 0) + t.total;
+                    const h = t.hora.split(':')[0] + ':00';
+                    resumenHora[h] = (resumenHora[h] || 0) + t.total;
+                    t.items.forEach(i => resumenProd[i.nombre] = (resumenProd[i.nombre] || 0) + i.qty);
+                });
                 
                 const batch = db.batch();
                 const corteRef = db.collection('cortes').doc(); 
                 
                 batch.set(corteRef, {
                     total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString(),
-                    hora: new Date().toLocaleTimeString(), detalle_productos: resumen,
+                    hora: new Date().toLocaleTimeString(), 
+                    detalle_productos: resumenProd,
+                    detalle_vendedores: resumenVend,
+                    detalle_horas: resumenHora,
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
@@ -263,11 +378,6 @@
                     nombre: n.toUpperCase(), subcategoria: sub.toUpperCase(),
                     precio: Number(p), stock: Number(s), categoria: catActiva.toUpperCase()
                 });
-            };
-
-            const agregarLibre = () => {
-                const p = prompt("Precio:"); const n = prompt("Concepto:");
-                if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1, categoria: 'Venta Libre'}]); setShowCart(true); }
             };
 
             if (needConfig) {
@@ -351,7 +461,6 @@
                                         {cat}
                                     </button>
                                 ))}
-                                <button onClick={() => agregarLibre()} className="px-5 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap bg-white text-gray-400">+ Libre</button>
                             </div>
                             
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 pb-28 scroll-hide">
@@ -467,11 +576,10 @@
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
                             
-                            {/* ¡AQUÍ ESTÁ LA NUEVA CAJA ROSADA GIGANTE! */}
                             {!selectedCorte && (
                                 <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
                                     <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ GESTIÓN DE CATEGORÍAS</h2>
-                                    <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales (ej. Trolly, Nieve). Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
+                                    <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales. Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
                                     
                                     <div className="flex flex-col gap-3">
                                         {categories.map((cat, idx) => (
@@ -523,7 +631,6 @@
                                 </div>
                             ) : (
                                 <>
-                                    {/* ZONA DE RESCATE */}
                                     {orphanedProducts.length > 0 && (
                                         <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
                                             <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
@@ -604,34 +711,6 @@
                                         ))}
                                         <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
                                     </div>
-
-                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                        <h2 className="font-black uppercase text-pink-600 mb-6 text-sm">📑 Auditoría de Cortes Mensuales</h2>
-                                        
-                                        {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
-                                            const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
-                                            return (
-                                            <div key={mes} className="mb-6">
-                                                <div className="flex justify-between items-end border-b-2 border-slate-100 pb-1 mb-3">
-                                                    <h3 className="font-black text-slate-400 uppercase text-[10px] tracking-widest">{mes}</h3>
-                                                    <span className="font-black text-pink-600 text-xs uppercase bg-pink-50 px-2 py-0.5 rounded-md">Total: ${totalMes}</span>
-                                                </div>
-                                                {cortesDelMes.map(c => (
-                                                    <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <div>
-                                                                <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
-                                                                <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
-                                                            </div>
-                                                            <p className="text-xl font-black text-green-600">${c.total}</p>
-                                                        </div>
-                                                        <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Detalle Exacto 🔍</button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            );
-                                        })}
-                                    </div>
                                 </>
                             )}
                         </div>
@@ -639,10 +718,27 @@
 
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
-                            <div className="bg-pink-600 p-8 rounded-[40px] mb-4 text-white text-center shadow-xl">
+                            <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
                                 <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
                                 <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
                                 <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
+                            </div>
+                            
+                            {/* GRÁFICAS MÚLTIPLES */}
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
+                                <div className="flex flex-col mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
+                                    <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
+                                        <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
+                                        <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
+                                        <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
+                                        <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
+                                        <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
+                                    </div>
+                                </div>
+                                <div className="h-56 w-full relative">
+                                    <canvas ref={chartRef}></canvas>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3 mb-6">
@@ -663,33 +759,31 @@
                                     <p className="font-black text-sm text-slate-800 leading-tight">{bestDay}</p>
                                 </div>
                             </div>
-
-                            <div className="space-y-3 pb-24">
-                                <p className="font-black uppercase text-slate-400 text-[10px] ml-2 italic mb-2">Desglose de Movimientos ({tickets.length}):</p>
-                                {tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                                    <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500':t.tipo==='Devolución'?'border-orange-500 opacity-90':t.tipo==='Merma'?'border-red-400 opacity-80':'border-blue-400 opacity-80'}`}>
-                                        <div className="flex justify-between items-start border-b border-slate-200/50 pb-2 mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-black text-[12px] uppercase">{t.hora}</span>
-                                                <span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span>
-                                                {t.tipo !== 'Venta' && <span className={`text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase ${t.tipo==='Devolución'?'bg-orange-500':t.tipo==='Merma'?'bg-red-400':'bg-blue-400'}`}>{t.tipo}</span>}
-                                            </div>
-                                            <div className="text-right leading-none">
-                                                <p className={`text-2xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
-                                                {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            {t.items.map(i => (
-                                                <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
-                                                    <span>{i.qty}x {i.nombre}</span>
-                                                    <span>${i.precio} c/u</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                            
+                            <h2 className="font-black uppercase text-pink-600 mb-6 mt-8 text-sm">📑 Auditoría de Cortes Mensuales</h2>
+                            {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
+                                const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
+                                return (
+                                <div key={mes} className="mb-6 bg-white p-6 rounded-[35px] shadow-sm">
+                                    <div className="flex justify-between items-end border-b-2 border-slate-100 pb-2 mb-4">
+                                        <h3 className="font-black text-slate-400 uppercase text-[12px] tracking-widest">{mes}</h3>
+                                        <span className="font-black text-pink-600 text-sm uppercase bg-pink-50 px-3 py-1 rounded-lg">Total: ${totalMes}</span>
                                     </div>
-                                ))}
-                            </div>
+                                    {cortesDelMes.map(c => (
+                                        <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
+                                                </div>
+                                                <p className="text-xl font-black text-green-600">${c.total}</p>
+                                            </div>
+                                            <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Detalle Exacto 🔍</button>
+                                        </div>
+                                    ))}
+                                </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
