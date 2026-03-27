@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Inteligencia de Negocios</title>
+    <title>Michoacana Pro - Corrección de Mayúsculas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -27,7 +27,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const TIEMPO_SESION = 5 * 60 * 60 * 1000; // 5 Horas
+        const TIEMPO_SESION = 5 * 60 * 60 * 1000; 
 
         const App = () => {
             const [db, setDb] = useState(null);
@@ -73,7 +73,7 @@
             
             const chartRef = useRef(null);
             const chartInstance = useRef(null);
-            const [tipoGrafica, setTipoGrafica] = useState('dia'); // dia, mes, producto, vendedor, hora
+            const [tipoGrafica, setTipoGrafica] = useState('dia'); 
 
             useEffect(() => {
                 const handleVisibility = () => {
@@ -130,7 +130,20 @@
                 }
             }, [selectedCorte, db]);
 
-            // LÓGICA DE LAS GRÁFICAS MULTIPLES
+            const obtenerFechaSegura = (c) => {
+                if (c.timestamp && typeof c.timestamp.toDate === 'function') return c.timestamp.toDate();
+                if (c.fecha) {
+                    const p = c.fecha.split('/');
+                    if (p.length === 3) {
+                        let d = parseInt(p[0]), m = parseInt(p[1]), y = parseInt(p[2]);
+                        if (m > 12) { d = parseInt(p[1]); m = parseInt(p[0]); }
+                        else if (m > 3 && d <= 3 && y === 2026) { d = parseInt(p[1]); m = parseInt(p[0]); }
+                        return new Date(y, m-1, d);
+                    }
+                }
+                return new Date();
+            };
+
             useEffect(() => {
                 if (view === 'history' && chartRef.current) {
                     if (chartInstance.current) chartInstance.current.destroy();
@@ -142,32 +155,29 @@
                     if (tipoGrafica === 'mes') {
                         const datosMes = {};
                         cortes.forEach(c => {
-                            const partes = c.fecha.split('/');
-                            if(partes.length === 3) {
-                                const mesAnio = `${partes[1]}/${partes[2]}`;
-                                datosMes[mesAnio] = (datosMes[mesAnio] || 0) + c.total;
-                            }
+                            const f = obtenerFechaSegura(c);
+                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}`;
+                            datosMes[key] = (datosMes[key] || 0) + c.total;
                         });
-                        const sortedKeys = Object.keys(datosMes).sort((a,b) => {
-                            const [ma, ya] = a.split('/');
-                            const [mb, yb] = b.split('/');
-                            return new Date(ya, ma-1) - new Date(yb, mb-1);
-                        });
+                        const sortedKeys = Object.keys(datosMes).sort();
                         labels = sortedKeys.map(k => {
-                            const [m, y] = k.split('/');
+                            const [y, m] = k.split('-');
                             return new Date(y, m-1).toLocaleDateString('es-MX', {month:'short'}).toUpperCase() + ' ' + y;
                         });
                         data = sortedKeys.map(k => datosMes[k]);
                         
                     } else if (tipoGrafica === 'dia') {
                         const datosDia = {};
-                        cortes.forEach(c => datosDia[c.fecha] = (datosDia[c.fecha] || 0) + c.total);
-                        const sortedKeys = Object.keys(datosDia).sort((a,b) => {
-                            const [da, ma, ya] = a.split('/');
-                            const [db, mb, yb] = b.split('/');
-                            return new Date(ya, ma-1, da) - new Date(yb, mb-1, db);
-                        }).slice(-15); 
-                        labels = sortedKeys.map(k => k.slice(0,5)); 
+                        cortes.forEach(c => {
+                            const f = obtenerFechaSegura(c);
+                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}-${f.getDate().toString().padStart(2,'0')}`;
+                            datosDia[key] = (datosDia[key] || 0) + c.total;
+                        });
+                        const sortedKeys = Object.keys(datosDia).sort().slice(-15); 
+                        labels = sortedKeys.map(k => {
+                            const [y, m, d] = k.split('-');
+                            return `${d}/${m}`; 
+                        });
                         data = sortedKeys.map(k => datosDia[k]);
                         
                     } else if (tipoGrafica === 'producto') {
@@ -176,7 +186,7 @@
                         cortes.forEach(c => {
                             if(c.detalle_productos) Object.keys(c.detalle_productos).forEach(k => aggProd[k] = (aggProd[k]||0) + c.detalle_productos[k]);
                         });
-                        const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10); // Top 10
+                        const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10);
                         labels = sorted.map(x => x[0].length > 10 ? x[0].substring(0,10)+'...' : x[0]);
                         data = sorted.map(x => x[1]);
                         labelName = 'Unidades Vendidas';
@@ -231,13 +241,7 @@
             const agruparCortesPorMes = () => {
                 const grupos = {};
                 cortes.forEach(c => {
-                    let fechaObj = new Date(); 
-                    if (c.timestamp && typeof c.timestamp.toDate === 'function') {
-                        fechaObj = c.timestamp.toDate();
-                    } else if (c.fecha) {
-                        const partes = c.fecha.split('/');
-                        if(partes.length === 3) fechaObj = new Date(partes[2], partes[1]-1, partes[0]);
-                    }
+                    const fechaObj = obtenerFechaSegura(c);
                     const mesAnio = fechaObj.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }).toUpperCase();
                     if (!grupos[mesAnio]) grupos[mesAnio] = [];
                     grupos[mesAnio].push(c);
@@ -276,11 +280,20 @@
                 const th = Object.entries(hourSales).sort((a,b)=>b[1]-a[1])[0]; if(th) topHour = `${th[0]}:00 hrs`;
             }
             if (cortes.length > 0) {
-                const daySales = {}; cortes.forEach(c => daySales[c.fecha] = (daySales[c.fecha] || 0) + c.total);
+                const daySales = {}; cortes.forEach(c => {
+                    const f = obtenerFechaSegura(c);
+                    const fStr = f.toLocaleDateString('es-MX');
+                    daySales[fStr] = (daySales[fStr] || 0) + c.total;
+                });
                 const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
             }
 
-            const orphanedProducts = products.filter(p => !categories.includes(p.categoria));
+            // CORRECCIÓN: Ignorar mayúsculas y minúsculas para encontrar productos huérfanos
+            const orphanedProducts = products.filter(p => {
+                const productCat = (p.categoria || '').trim().toUpperCase();
+                const validCats = categories.map(c => c.trim().toUpperCase());
+                return !validCats.includes(productCat);
+            });
 
             const agregarAlCarrito = (producto) => {
                 setCart(prev => {
@@ -295,7 +308,7 @@
                 batch.set(db.collection('tickets').doc(), {
                     vendedor: user.nombre, items: cart, total: totalFinal, 
                     descuento: discountPct, cortado: false, tipo: tipoVenta,
-                    hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    hora: new Date().toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}),
                     timestamp: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
@@ -311,7 +324,6 @@
             const hacerCorteCaja = async () => {
                 if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
                 
-                // Nuevos diccionarios para guardar horas y vendedores históricos
                 const resumenProd = {};
                 const resumenVend = {};
                 const resumenHora = {};
@@ -327,8 +339,10 @@
                 const corteRef = db.collection('cortes').doc(); 
                 
                 batch.set(corteRef, {
-                    total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString(),
-                    hora: new Date().toLocaleTimeString(), 
+                    total: totalCajaActual, 
+                    responsable: user.nombre, 
+                    fecha: new Date().toLocaleDateString('es-MX'),
+                    hora: new Date().toLocaleTimeString('es-MX'), 
                     detalle_productos: resumenProd,
                     detalle_vendedores: resumenVend,
                     detalle_horas: resumenHora,
@@ -631,6 +645,7 @@
                                 </div>
                             ) : (
                                 <>
+                                    {/* ZONA DE RESCATE CORREGIDA */}
                                     {orphanedProducts.length > 0 && (
                                         <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
                                             <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
@@ -724,7 +739,6 @@
                                 <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
                             </div>
                             
-                            {/* GRÁFICAS MÚLTIPLES */}
                             <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
                                 <div className="flex flex-col mb-4">
                                     <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
