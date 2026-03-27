@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Gráficas de la Semana</title>
+    <title>Michoacana Pro - Detalles y Resumen</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -145,7 +145,7 @@
             };
 
             useEffect(() => {
-                if (view === 'history' && chartRef.current) {
+                if (view === 'history' && !selectedCorte && chartRef.current) {
                     if (chartInstance.current) chartInstance.current.destroy();
 
                     let labels = [];
@@ -193,17 +193,14 @@
                         
                     } else if (tipoGrafica === 'vendedor') {
                         const aggVend = {};
-                        // Calcular fecha de hace 7 días
                         const hace7Dias = new Date();
                         hace7Dias.setDate(hace7Dias.getDate() - 7);
                         hace7Dias.setHours(0,0,0,0);
 
-                        // Los tickets de hoy (sin cortar) siempre entran en la semana
                         tickets.filter(t=>t.tipo==='Venta').forEach(t => {
                             aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total;
                         });
                         
-                        // Solo sumamos los cortes que se hayan hecho en los últimos 7 días
                         cortes.forEach(c => {
                             const f = obtenerFechaSegura(c);
                             if (f >= hace7Dias) {
@@ -254,7 +251,7 @@
                         }
                     });
                 }
-            }, [view, cortes, tickets, tipoGrafica]);
+            }, [view, selectedCorte, cortes, tickets, tipoGrafica]);
 
             const agruparCortesPorMes = () => {
                 const grupos = {};
@@ -457,6 +454,68 @@
                 return p.categoria.toUpperCase() === catActiva.toUpperCase();
             });
 
+            // COMPONENTE DEL DETALLE DEL CORTE (REUTILIZABLE)
+            const renderDetalleCorte = () => (
+                <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                    <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl active:scale-95 transition-transform">← Volver a Cortes</button>
+                    <h2 className="font-black uppercase text-slate-800 text-xl mb-1">Detalle del Día</h2>
+                    <p className="text-xs text-slate-400 font-bold mb-6 uppercase">{selectedCorte.fecha} - Responsable: {selectedCorte.responsable}</p>
+                    
+                    {/* EL NUEVO MINI RESUMEN DE PRODUCTOS */}
+                    <div className="mb-8 p-5 bg-pink-50 rounded-[25px] border border-pink-100 shadow-inner">
+                        <h3 className="font-black uppercase text-pink-600 text-[10px] tracking-widest mb-3 border-b border-pink-200 pb-2">📦 Resumen de Productos Vendidos</h3>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                            {(() => {
+                                const resumen = {};
+                                if (selectedCorte.detalle_productos && Object.keys(selectedCorte.detalle_productos).length > 0) {
+                                    Object.assign(resumen, selectedCorte.detalle_productos);
+                                } else {
+                                    corteTickets.filter(t => t.tipo === 'Venta').forEach(t => {
+                                        t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty);
+                                    });
+                                }
+                                const sorted = Object.entries(resumen).sort((a,b)=>b[1]-a[1]);
+                                if(sorted.length === 0) return <p className="text-[10px] text-slate-400 italic col-span-2">No hay productos vendidos en este corte.</p>;
+                                return sorted.map(([nombre, qty]) => (
+                                    <div key={nombre} className="flex justify-between items-center text-[10px] font-black uppercase border-b border-pink-200/50 pb-1">
+                                        <span className="text-slate-600 truncate pr-2">{nombre}</span>
+                                        <span className="text-pink-500 bg-white px-2 py-0.5 rounded-md shadow-sm">{qty}x</span>
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    </div>
+
+                    <h3 className="font-black uppercase text-slate-400 text-[10px] tracking-widest mb-3">🧾 Movimientos Exactos</h3>
+                    <div className="space-y-3">
+                        {corteTickets.length === 0 ? <p className="text-center text-slate-400 italic">Cargando movimientos...</p> : 
+                         corteTickets.map(t => (
+                            <div key={t.id} className={`p-4 rounded-[20px] border-r-4 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500 bg-slate-50':t.tipo==='Devolución'?'border-orange-500 bg-orange-50':t.tipo==='Merma'?'border-red-400 bg-red-50':'border-blue-400 bg-blue-50'}`}>
+                                <div className="flex justify-between items-start border-b border-slate-200/50 pb-2 mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-black text-[11px] uppercase">{t.hora}</span>
+                                        <span className="text-[9px] bg-white border px-2 py-0.5 rounded-md text-slate-500 font-bold uppercase">{t.vendedor}</span>
+                                        {t.tipo !== 'Venta' && <span className="text-[8px] px-2 py-0.5 rounded-lg text-slate-600 font-black uppercase border">{t.tipo}</span>}
+                                    </div>
+                                    <div className="text-right leading-none">
+                                        <p className={`text-xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
+                                        {t.descuento > 0 && <p className="text-[8px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    {t.items.map(i => (
+                                        <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
+                                            <span>{i.qty}x {i.nombre}</span>
+                                            <span>${i.precio} c/u</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+
             return (
                 <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl relative overflow-hidden">
                     <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30 shadow-md">
@@ -628,38 +687,7 @@
                             )}
 
                             {selectedCorte ? (
-                                <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                    <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl">← Volver a Cortes</button>
-                                    <h2 className="font-black uppercase text-slate-800 text-xl mb-1">Detalle del Día</h2>
-                                    <p className="text-xs text-slate-400 font-bold mb-6 uppercase">{selectedCorte.fecha} - Responsable: {selectedCorte.responsable}</p>
-                                    
-                                    <div className="space-y-3">
-                                        {corteTickets.length === 0 ? <p className="text-center text-slate-400 italic">Cargando movimientos...</p> : 
-                                         corteTickets.map(t => (
-                                            <div key={t.id} className={`p-4 rounded-[20px] border-r-4 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500 bg-slate-50':t.tipo==='Devolución'?'border-orange-500 bg-orange-50':t.tipo==='Merma'?'border-red-400 bg-red-50':'border-blue-400 bg-blue-50'}`}>
-                                                <div className="flex justify-between items-start border-b border-slate-200/50 pb-2 mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-black text-[11px] uppercase">{t.hora}</span>
-                                                        <span className="text-[9px] bg-white border px-2 py-0.5 rounded-md text-slate-500 font-bold uppercase">{t.vendedor}</span>
-                                                        {t.tipo !== 'Venta' && <span className="text-[8px] px-2 py-0.5 rounded-lg text-slate-600 font-black uppercase border">{t.tipo}</span>}
-                                                    </div>
-                                                    <div className="text-right leading-none">
-                                                        <p className={`text-xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
-                                                        {t.descuento > 0 && <p className="text-[8px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    {t.items.map(i => (
-                                                        <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
-                                                            <span>{i.qty}x {i.nombre}</span>
-                                                            <span>${i.precio} c/u</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                                renderDetalleCorte()
                             ) : (
                                 <>
                                     {orphanedProducts.length > 0 && (
@@ -749,72 +777,77 @@
 
                     {view === 'history' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
-                            <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
-                                <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
-                                <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
-                                <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-scale-95 transition-all">Realizar Corte 💰</button>
-                            </div>
-                            
-                            {/* GRÁFICAS MÚLTIPLES */}
-                            <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
-                                <div className="flex flex-col mb-4">
-                                    <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
-                                    <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
-                                        <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
-                                        <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
-                                        <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
-                                        <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
-                                        <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
+                            {selectedCorte ? (
+                                renderDetalleCorte()
+                            ) : (
+                                <>
+                                    <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
+                                        <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
+                                        <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
+                                        <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
                                     </div>
-                                </div>
-                                <div className="h-56 w-full relative">
-                                    <canvas ref={chartRef}></canvas>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 mb-6">
-                                <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-yellow-400">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Producto Top 🌟</p>
-                                    <p className="font-black text-sm text-slate-800 leading-tight">{topProd}</p>
-                                </div>
-                                <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-green-400">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendedor Top 🥇</p>
-                                    <p className="font-black text-sm text-slate-800 leading-tight">{topEmp}</p>
-                                </div>
-                                <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-purple-400">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Hora Pico ⏰</p>
-                                    <p className="font-black text-sm text-slate-800 leading-tight">{topHour}</p>
-                                </div>
-                                <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-blue-400">
-                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Mejor Día 📅</p>
-                                    <p className="font-black text-sm text-slate-800 leading-tight">{bestDay}</p>
-                                </div>
-                            </div>
-                            
-                            <h2 className="font-black uppercase text-pink-600 mb-6 mt-8 text-sm">📑 Auditoría de Cortes Mensuales</h2>
-                            {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
-                                const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
-                                return (
-                                <div key={mes} className="mb-6 bg-white p-6 rounded-[35px] shadow-sm">
-                                    <div className="flex justify-between items-end border-b-2 border-slate-100 pb-2 mb-4">
-                                        <h3 className="font-black text-slate-400 uppercase text-[12px] tracking-widest">{mes}</h3>
-                                        <span className="font-black text-pink-600 text-sm uppercase bg-pink-50 px-3 py-1 rounded-lg">Total: ${totalMes}</span>
-                                    </div>
-                                    {cortesDelMes.map(c => (
-                                        <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
-                                                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
-                                                </div>
-                                                <p className="text-xl font-black text-green-600">${c.total}</p>
+                                    
+                                    <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
+                                        <div className="flex flex-col mb-4">
+                                            <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
+                                            <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
+                                                <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
+                                                <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
+                                                <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
+                                                <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
+                                                <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
                                             </div>
-                                            <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Detalle Exacto 🔍</button>
                                         </div>
-                                    ))}
-                                </div>
-                                );
-                            })}
+                                        <div className="h-56 w-full relative">
+                                            <canvas ref={chartRef}></canvas>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 mb-6">
+                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-yellow-400">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Producto Top 🌟</p>
+                                            <p className="font-black text-sm text-slate-800 leading-tight">{topProd}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-green-400">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendedor Top 🥇</p>
+                                            <p className="font-black text-sm text-slate-800 leading-tight">{topEmp}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-purple-400">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Hora Pico ⏰</p>
+                                            <p className="font-black text-sm text-slate-800 leading-tight">{topHour}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-blue-400">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Mejor Día 📅</p>
+                                            <p className="font-black text-sm text-slate-800 leading-tight">{bestDay}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <h2 className="font-black uppercase text-pink-600 mb-6 mt-8 text-sm">📑 Auditoría de Cortes Mensuales</h2>
+                                    {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
+                                        const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
+                                        return (
+                                        <div key={mes} className="mb-6 bg-white p-6 rounded-[35px] shadow-sm">
+                                            <div className="flex justify-between items-end border-b-2 border-slate-100 pb-2 mb-4">
+                                                <h3 className="font-black text-slate-400 uppercase text-[12px] tracking-widest">{mes}</h3>
+                                                <span className="font-black text-pink-600 text-sm uppercase bg-pink-50 px-3 py-1 rounded-lg">Total: ${totalMes}</span>
+                                            </div>
+                                            {cortesDelMes.map(c => (
+                                                <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
+                                                            <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
+                                                        </div>
+                                                        <p className="text-xl font-black text-green-600">${c.total}</p>
+                                                    </div>
+                                                    <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Detalle Exacto 🔍</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        );
+                                    })}
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
