@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Limpieza Total</title>
+    <title>Michoacana Pro - Organización Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -494,14 +494,22 @@
                                 </div>
                             ) : (
                                 <>
+                                    {/* ZONA DE RESCATE MEJORADA */}
                                     {orphanedProducts.length > 0 && (
                                         <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-200">
                                             <h2 className="font-black uppercase text-red-500 mb-2 text-sm">⚠️ Productos Ocultos / Sin Apartado</h2>
-                                            <p className="text-xs text-red-400 mb-4">Escribe una categoría válida para rescatarlos.</p>
+                                            <p className="text-xs text-red-400 mb-4">Estos productos perdieron su categoría. Selecciona una nueva para rescatarlos:</p>
                                             {orphanedProducts.map(p => (
-                                                <div key={p.id} className="p-3 bg-white rounded-2xl border border-red-100 mb-2 flex justify-between items-center">
-                                                    <p className="font-black text-xs uppercase flex-1">{p.nombre}</p>
-                                                    <input className="border w-24 p-2 rounded-xl text-[10px] font-black uppercase text-blue-500 outline-none" defaultValue={p.categoria} onBlur={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)} />
+                                                <div key={p.id} className="p-3 bg-white rounded-2xl border border-red-100 mb-2 flex justify-between items-center gap-2">
+                                                    <p className="font-black text-xs uppercase flex-1 truncate">{p.nombre}</p>
+                                                    <select 
+                                                        className="border p-2 rounded-xl text-[10px] font-black uppercase text-blue-500 outline-none w-32"
+                                                        value={categories.includes(p.categoria) ? p.categoria : ""} 
+                                                        onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
+                                                    >
+                                                        <option value="" disabled>Elegir...</option>
+                                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
                                                 </div>
                                             ))}
                                         </div>
@@ -515,7 +523,7 @@
                                                     <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
                                                     <div className="flex gap-1 ml-2">
                                                         <button onClick={()=>{const n = prompt("Nuevo nombre:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-blue-500 font-bold text-xs bg-blue-50 px-2 rounded-lg">EDIT</button>
-                                                        <button onClick={()=>{if(confirm("¿Borrar apartado entero?")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
+                                                        <button onClick={()=>{if(confirm("¿Borrar apartado entero? Los productos irán a la zona de rescate.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
                                                     </div>
                                                 </div>
                                             ))}
@@ -554,14 +562,23 @@
                                         </div>
                                         {products.filter(p => p.categoria.toUpperCase() === catActiva.toUpperCase()).map(p => (
                                             <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
-                                                <input className="font-black uppercase text-xs bg-transparent w-full mb-1 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
+                                                <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
                                                 
-                                                <div className="flex items-center gap-2 mb-3">
-                                                    <span className="text-[8px] font-black text-slate-400 uppercase">División:</span>
-                                                    <input className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 w-full text-blue-500" defaultValue={p.subcategoria || ''} onBlur={(x)=>handleUpdateProduct(p.id, 'subcategoria', x.target.value)} placeholder="Ej. AGUA, CREMA, CHICO..." />
+                                                {/* NUEVO SISTEMA PARA MOVER CATEGORÍAS */}
+                                                <div className="grid grid-cols-2 gap-2 mb-3">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Mover a categoría:</span>
+                                                        <select className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" value={p.categoria} onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}>
+                                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[8px] font-black text-slate-400 uppercase">División (Ej. AGUA):</span>
+                                                        <input className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" defaultValue={p.subcategoria || ''} onBlur={(x)=>handleUpdateProduct(p.id, 'subcategoria', x.target.value)} placeholder="..." />
+                                                    </div>
                                                 </div>
 
-                                                <div className="flex justify-between items-center">
+                                                <div className="flex justify-between items-center mt-2">
                                                     <div className="flex gap-3">
                                                         <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
                                                         <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
