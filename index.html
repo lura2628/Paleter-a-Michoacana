@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Organización Inteligente</title>
+    <title>Michoacana Pro - Categorías Arregladas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -79,7 +79,7 @@
                             setView('login');
                             localStorage.removeItem('michoacana_user');
                             localStorage.removeItem('michoacana_user_time');
-                            alert("Por seguridad, la sesión ha expirado después de 5 horas. Por favor, vuelve a ingresar tu PIN.");
+                            alert("Por seguridad, la sesión ha expirado. Ingresa tu PIN de nuevo.");
                         }
                     }
                 };
@@ -177,6 +177,7 @@
                 const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
             }
 
+            // Los productos se consideran huérfanos si su categoría no existe en la lista de apartados
             const orphanedProducts = products.filter(p => !categories.includes(p.categoria));
 
             const agregarAlCarrito = (producto) => {
@@ -264,6 +265,11 @@
                 });
             };
 
+            const agregarLibre = () => {
+                const p = prompt("Precio:"); const n = prompt("Concepto:");
+                if(p && n) { setCart([...cart, {id: 'libre', nombre: n.toUpperCase(), precio: Number(p), qty: 1, categoria: 'Venta Libre'}]); setShowCart(true); }
+            };
+
             if (needConfig) {
                 return (
                     <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
@@ -345,6 +351,7 @@
                                         {cat}
                                     </button>
                                 ))}
+                                <button onClick={() => agregarLibre()} className="px-5 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap bg-white text-gray-400">+ Libre</button>
                             </div>
                             
                             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 pb-28 scroll-hide">
@@ -459,6 +466,28 @@
 
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
+                            
+                            {/* ¡AQUÍ ESTÁ LA NUEVA CAJA ROSADA GIGANTE! */}
+                            {!selectedCorte && (
+                                <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
+                                    <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ GESTIÓN DE CATEGORÍAS</h2>
+                                    <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales (ej. Trolly, Nieve). Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
+                                    
+                                    <div className="flex flex-col gap-3">
+                                        {categories.map((cat, idx) => (
+                                            <div key={idx} className="bg-white px-4 py-3 rounded-2xl flex justify-between items-center border shadow-sm">
+                                                <span className="font-black text-lg uppercase text-slate-800">{cat}</span>
+                                                <div className="flex gap-2">
+                                                    <button onClick={()=>{const n = prompt("Corregir nombre de la categoría:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-blue-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Editar</button>
+                                                    <button onClick={()=>{if(confirm("¿Seguro que quieres BORRAR '"+cat+"'? Sus productos se irán a la zona roja de ocultos.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-red-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Borrar</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <button onClick={()=>{const n = prompt("Nombre de la NUEVA categoría:"); if(n){ const c = [...categories, n.trim().toUpperCase()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-600 text-white shadow-md px-6 py-4 mt-2 rounded-2xl font-black text-sm uppercase active:scale-95 transition-transform w-full">+ Añadir Nueva Categoría</button>
+                                    </div>
+                                </div>
+                            )}
+
                             {selectedCorte ? (
                                 <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                     <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl">← Volver a Cortes</button>
@@ -494,42 +523,29 @@
                                 </div>
                             ) : (
                                 <>
-                                    {/* ZONA DE RESCATE MEJORADA */}
+                                    {/* ZONA DE RESCATE */}
                                     {orphanedProducts.length > 0 && (
-                                        <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-200">
-                                            <h2 className="font-black uppercase text-red-500 mb-2 text-sm">⚠️ Productos Ocultos / Sin Apartado</h2>
-                                            <p className="text-xs text-red-400 mb-4">Estos productos perdieron su categoría. Selecciona una nueva para rescatarlos:</p>
+                                        <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
+                                            <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
+                                            <p className="text-xs text-red-500 mb-4 font-bold">Estos productos se quedaron sin categoría porque la borraste. Elige a dónde mandarlos:</p>
                                             {orphanedProducts.map(p => (
-                                                <div key={p.id} className="p-3 bg-white rounded-2xl border border-red-100 mb-2 flex justify-between items-center gap-2">
-                                                    <p className="font-black text-xs uppercase flex-1 truncate">{p.nombre}</p>
-                                                    <select 
-                                                        className="border p-2 rounded-xl text-[10px] font-black uppercase text-blue-500 outline-none w-32"
-                                                        value={categories.includes(p.categoria) ? p.categoria : ""} 
-                                                        onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
-                                                    >
-                                                        <option value="" disabled>Elegir...</option>
-                                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                    </select>
+                                                <div key={p.id} className="p-4 bg-white rounded-2xl border border-red-200 mb-2 flex flex-col gap-2">
+                                                    <p className="font-black text-sm uppercase text-slate-800">{p.nombre}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Mover a:</span>
+                                                        <select 
+                                                            className="border-2 border-blue-200 p-2 rounded-xl text-xs font-black uppercase text-blue-600 outline-none w-full bg-blue-50"
+                                                            value="" 
+                                                            onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
+                                                        >
+                                                            <option value="" disabled>Selecciona una categoría...</option>
+                                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
-
-                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                        <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">🗂️ Categorías (Apartados)</h2>
-                                        <div className="flex flex-wrap gap-2">
-                                            {categories.map((cat, idx) => (
-                                                <div key={idx} className="bg-slate-50 px-3 py-2 rounded-2xl flex items-center gap-2 border">
-                                                    <span className="font-black text-[10px] uppercase text-slate-600">{cat}</span>
-                                                    <div className="flex gap-1 ml-2">
-                                                        <button onClick={()=>{const n = prompt("Nuevo nombre:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-blue-500 font-bold text-xs bg-blue-50 px-2 rounded-lg">EDIT</button>
-                                                        <button onClick={()=>{if(confirm("¿Borrar apartado entero? Los productos irán a la zona de rescate.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-red-400 font-bold text-xs bg-red-50 px-2 rounded-lg">X</button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            <button onClick={()=>{const n = prompt("Nueva categoría (Usa 'ADMIN' al inicio si quieres que sea invisible para empleados):"); if(n){ const c = [...categories, n.trim().toUpperCase()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-50 text-pink-600 border border-pink-200 border-dashed px-4 py-2 rounded-2xl font-black text-[10px] uppercase">+ Añadir</button>
-                                        </div>
-                                    </div>
 
                                     <div className="bg-white p-6 rounded-[35px] shadow-sm">
                                         <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
@@ -564,7 +580,6 @@
                                             <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
                                                 <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
                                                 
-                                                {/* NUEVO SISTEMA PARA MOVER CATEGORÍAS */}
                                                 <div className="grid grid-cols-2 gap-2 mb-3">
                                                     <div className="flex flex-col">
                                                         <span className="text-[8px] font-black text-slate-400 uppercase">Mover a categoría:</span>
@@ -616,7 +631,6 @@
                                             </div>
                                             );
                                         })}
-                                        
                                     </div>
                                 </>
                             )}
