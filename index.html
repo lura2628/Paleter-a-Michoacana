@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Gráfica Todos los Vendedores</title>
+    <title>Michoacana Pro - Gráficas en Pestaña Nueva</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -144,8 +144,9 @@
                 return new Date();
             };
 
+            // LÓGICA DE GRÁFICAS AHORA EN LA PESTAÑA 'dashboard'
             useEffect(() => {
-                if (view === 'history' && !selectedCorte && chartRef.current) {
+                if (view === 'dashboard' && chartRef.current) {
                     if (chartInstance.current) chartInstance.current.destroy();
 
                     let labels = [];
@@ -194,7 +195,6 @@
                     } else if (tipoGrafica === 'vendedor') {
                         const aggVend = {};
                         
-                        // OBLIGAMOS A QUE TODOS LOS EMPLEADOS APAREZCAN DESDE 0
                         employees.forEach(emp => {
                             aggVend[emp.nombre] = 0;
                         });
@@ -257,7 +257,7 @@
                         }
                     });
                 }
-            }, [view, selectedCorte, cortes, tickets, tipoGrafica, employees]); // Se agregó employees a las dependencias
+            }, [view, cortes, tickets, tipoGrafica, employees]);
 
             const agruparCortesPorMes = () => {
                 const grupos = {};
@@ -526,6 +526,8 @@
                         <span className="font-black italic uppercase text-xl">Michoacana Pro</span>
                         <div className="flex gap-4 items-center">
                             <button onClick={() => {setView('pos'); setSelectedCorte(null);}} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
+                            {/* NUEVO BOTÓN DE PESTAÑA PARA GRÁFICAS */}
+                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('dashboard'); setSelectedCorte(null);}} className={`text-2xl ${view==='dashboard'?'scale-125':''}`}>📈</button>}
                             {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('history'); setSelectedCorte(null);}} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
                             {user.rol === 'admin' && <button onClick={() => setView('admin')} className={`text-2xl ${view==='admin'?'scale-125':''}`}>📦</button>}
                             <button onClick={() => {
@@ -667,115 +669,127 @@
                         </div>
                     )}
 
+                    {/* NUEVA PESTAÑA DE DASHBOARD (GRÁFICAS) */}
+                    {view === 'dashboard' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
+                                <div className="flex flex-col mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
+                                    <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
+                                        <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
+                                        <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
+                                        <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
+                                        <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
+                                        <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
+                                    </div>
+                                </div>
+                                <div className="h-64 w-full relative">
+                                    <canvas ref={chartRef}></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {view === 'admin' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-                            
-                            {!selectedCorte && (
-                                <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
-                                    <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ GESTIÓN DE CATEGORÍAS</h2>
-                                    <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales. Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
-                                    
-                                    <div className="flex flex-col gap-3">
-                                        {categories.map((cat, idx) => (
-                                            <div key={idx} className="bg-white px-4 py-3 rounded-2xl flex justify-between items-center border shadow-sm">
-                                                <span className="font-black text-lg uppercase text-slate-800">{cat}</span>
-                                                <div className="flex gap-2">
-                                                    <button onClick={()=>{const n = prompt("Corregir nombre de la categoría:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-blue-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Editar</button>
-                                                    <button onClick={()=>{if(confirm("¿Seguro que quieres BORRAR '"+cat+"'? Sus productos se irán a la zona roja de ocultos.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-red-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Borrar</button>
-                                                </div>
+                            <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
+                                <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ GESTIÓN DE CATEGORÍAS</h2>
+                                <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales. Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
+                                
+                                <div className="flex flex-col gap-3">
+                                    {categories.map((cat, idx) => (
+                                        <div key={idx} className="bg-white px-4 py-3 rounded-2xl flex justify-between items-center border shadow-sm">
+                                            <span className="font-black text-lg uppercase text-slate-800">{cat}</span>
+                                            <div className="flex gap-2">
+                                                <button onClick={()=>{const n = prompt("Corregir nombre de la categoría:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-blue-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Editar</button>
+                                                <button onClick={()=>{if(confirm("¿Seguro que quieres BORRAR '"+cat+"'? Sus productos se irán a la zona roja de ocultos.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-red-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Borrar</button>
                                             </div>
-                                        ))}
-                                        <button onClick={()=>{const n = prompt("Nombre de la NUEVA categoría:"); if(n){ const c = [...categories, n.trim().toUpperCase()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-600 text-white shadow-md px-6 py-4 mt-2 rounded-2xl font-black text-sm uppercase active:scale-95 transition-transform w-full">+ Añadir Nueva Categoría</button>
-                                    </div>
+                                        </div>
+                                    ))}
+                                    <button onClick={()=>{const n = prompt("Nombre de la NUEVA categoría:"); if(n){ const c = [...categories, n.trim().toUpperCase()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-600 text-white shadow-md px-6 py-4 mt-2 rounded-2xl font-black text-sm uppercase active:scale-95 transition-transform w-full">+ Añadir Nueva Categoría</button>
+                                </div>
+                            </div>
+
+                            {orphanedProducts.length > 0 && (
+                                <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
+                                    <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
+                                    <p className="text-xs text-red-500 mb-4 font-bold">Estos productos se quedaron sin categoría porque la borraste. Elige a dónde mandarlos:</p>
+                                    {orphanedProducts.map(p => (
+                                        <div key={p.id} className="p-4 bg-white rounded-2xl border border-red-200 mb-2 flex flex-col gap-2">
+                                            <p className="font-black text-sm uppercase text-slate-800">{p.nombre}</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Mover a:</span>
+                                                <select 
+                                                    className="border-2 border-blue-200 p-2 rounded-xl text-xs font-black uppercase text-blue-600 outline-none w-full bg-blue-50"
+                                                    value="" 
+                                                    onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
+                                                >
+                                                    <option value="" disabled>Selecciona una categoría...</option>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
 
-                            {selectedCorte ? (
-                                renderDetalleCorte()
-                            ) : (
-                                <>
-                                    {orphanedProducts.length > 0 && (
-                                        <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
-                                            <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
-                                            <p className="text-xs text-red-500 mb-4 font-bold">Estos productos se quedaron sin categoría porque la borraste. Elige a dónde mandarlos:</p>
-                                            {orphanedProducts.map(p => (
-                                                <div key={p.id} className="p-4 bg-white rounded-2xl border border-red-200 mb-2 flex flex-col gap-2">
-                                                    <p className="font-black text-sm uppercase text-slate-800">{p.nombre}</p>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] font-bold text-slate-500 uppercase">Mover a:</span>
-                                                        <select 
-                                                            className="border-2 border-blue-200 p-2 rounded-xl text-xs font-black uppercase text-blue-600 outline-none w-full bg-blue-50"
-                                                            value="" 
-                                                            onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
-                                                        >
-                                                            <option value="" disabled>Selecciona una categoría...</option>
-                                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                        <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
-                                        {employees.map(e => (
-                                            <div key={e.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
-                                                <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
-                                                <div className="flex items-center gap-3">
-                                                    <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
-                                                        <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
-                                                    </select>
-                                                    <div className="flex items-center bg-white border rounded-xl px-2">
-                                                        <span className="text-[8px] font-black text-slate-400">PIN</span>
-                                                        <input className="w-12 p-2 text-center font-black text-xs outline-none bg-transparent" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                                                    </div>
-                                                    <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg hover:text-red-500">✕</button>
-                                                </div>
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
+                                {employees.map(e => (
+                                    <div key={e.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
+                                        <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                        <div className="flex items-center gap-3">
+                                            <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
+                                                <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
+                                            </select>
+                                            <div className="flex items-center bg-white border rounded-xl px-2">
+                                                <span className="text-[8px] font-black text-slate-400">PIN</span>
+                                                <input className="w-12 p-2 text-center font-black text-xs outline-none bg-transparent" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
                                             </div>
-                                        ))}
-                                        <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
+                                            <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg hover:text-red-500">✕</button>
+                                        </div>
                                     </div>
+                                ))}
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
+                            </div>
 
-                                    <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
-                                            <div className="flex gap-1 overflow-x-auto scroll-hide">
-                                                {visibleCategories.map(c => (
-                                                    <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva.toUpperCase()===c.toUpperCase()?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>{c}</button>
-                                                ))}
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
+                                    <div className="flex gap-1 overflow-x-auto scroll-hide">
+                                        {visibleCategories.map(c => (
+                                            <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva.toUpperCase()===c.toUpperCase()?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>{c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {products.filter(p => p.categoria.toUpperCase() === catActiva.toUpperCase()).map(p => (
+                                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
+                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
+                                        
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-slate-400 uppercase">Mover a categoría:</span>
+                                                <select className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" value={p.categoria} onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-slate-400 uppercase">División (Ej. AGUA):</span>
+                                                <input className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" defaultValue={p.subcategoria || ''} onBlur={(x)=>handleUpdateProduct(p.id, 'subcategoria', x.target.value)} placeholder="..." />
                                             </div>
                                         </div>
-                                        {products.filter(p => p.categoria.toUpperCase() === catActiva.toUpperCase()).map(p => (
-                                            <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
-                                                <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
-                                                
-                                                <div className="grid grid-cols-2 gap-2 mb-3">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[8px] font-black text-slate-400 uppercase">Mover a categoría:</span>
-                                                        <select className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" value={p.categoria} onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}>
-                                                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                                        </select>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[8px] font-black text-slate-400 uppercase">División (Ej. AGUA):</span>
-                                                        <input className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" defaultValue={p.subcategoria || ''} onBlur={(x)=>handleUpdateProduct(p.id, 'subcategoria', x.target.value)} placeholder="..." />
-                                                    </div>
-                                                </div>
 
-                                                <div className="flex justify-between items-center mt-2">
-                                                    <div className="flex gap-3">
-                                                        <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
-                                                        <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
-                                                    </div>
-                                                    <button onClick={() => confirm("¿Borrar permanentemente?") && db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl hover:text-red-500">✕</button>
-                                                </div>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <div className="flex gap-3">
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
                                             </div>
-                                        ))}
-                                        <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
+                                            <button onClick={() => confirm("¿Borrar permanentemente?") && db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl hover:text-red-500">✕</button>
+                                        </div>
                                     </div>
-                                </>
-                            )}
+                                ))}
+                                <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
+                            </div>
                         </div>
                     )}
 
@@ -789,22 +803,6 @@
                                         <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
                                         <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
                                         <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
-                                    </div>
-                                    
-                                    <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
-                                        <div className="flex flex-col mb-4">
-                                            <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
-                                            <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
-                                                <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
-                                                <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
-                                                <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
-                                                <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
-                                                <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
-                                            </div>
-                                        </div>
-                                        <div className="h-56 w-full relative">
-                                            <canvas ref={chartRef}></canvas>
-                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 mb-6">
@@ -826,7 +824,38 @@
                                         </div>
                                     </div>
                                     
-                                    <h2 className="font-black uppercase text-pink-600 mb-6 mt-8 text-sm">📑 Auditoría de Cortes Mensuales</h2>
+                                    {/* AQUÍ ESTÁ LA LISTA DE VENTAS DEL DÍA RESTAURADA */}
+                                    <div className="mb-8">
+                                        <h2 className="font-black uppercase text-pink-600 mb-3 text-sm">🧾 Ventas del Día (Caja Actual)</h2>
+                                        <div className="space-y-3">
+                                            {tickets.length === 0 ? <p className="text-center text-slate-400 italic text-sm mt-4">Aún no hay ventas registradas hoy.</p> : 
+                                             tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
+                                                <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500':t.tipo==='Devolución'?'border-orange-500 opacity-90':t.tipo==='Merma'?'border-red-400 opacity-80':'border-blue-400 opacity-80'}`}>
+                                                    <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-black text-[12px] uppercase">{t.hora}</span>
+                                                            <span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span>
+                                                            {t.tipo !== 'Venta' && <span className={`text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase ${t.tipo==='Devolución'?'bg-orange-500':t.tipo==='Merma'?'bg-red-400':'bg-blue-400'}`}>{t.tipo}</span>}
+                                                        </div>
+                                                        <div className="text-right leading-none">
+                                                            <p className={`text-2xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
+                                                            {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {t.items.map(i => (
+                                                            <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
+                                                                <span>{i.qty}x {i.nombre}</span>
+                                                                <span>${i.precio} c/u</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    <h2 className="font-black uppercase text-pink-600 mb-4 text-sm border-t-2 border-slate-200 pt-6">📑 Auditoría de Cortes Mensuales</h2>
                                     {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
                                         const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
                                         return (
