@@ -3,14 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Código Completo</title>
+    <title>Michoacana Pro - Versión Estable</title>
+    
+    <!-- HERRAMIENTAS CON CANDADO DE VERSIÓN PARA EVITAR ERRORES -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.6/babel.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    
     <style>
         @keyframes pulse-red { 0%, 100% { background-color: #ef4444; } 50% { background-color: #f87171; } }
         @keyframes pulse-blue { 0%, 100% { background-color: #3b82f6; } 50% { background-color: #93c5fd; } }
@@ -24,7 +27,7 @@
 </head>
 <body class="bg-slate-100 font-sans select-none text-slate-900">
     <div id="root"></div>
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
         const { useState, useEffect, useRef } = React;
 
         const TIEMPO_SESION = 5 * 60 * 60 * 1000; 
@@ -44,6 +47,7 @@
                     return null;
                 } catch(e) { return null; }
             });
+            
             const [view, setView] = useState(() => {
                 try { 
                     const saved = localStorage.getItem('michoacana_user'); 
@@ -97,8 +101,8 @@
                 if (!configStr) { setNeedConfig(true); return; }
                 try {
                     const config = JSON.parse(configStr);
-                    if (!firebase.apps.length) firebase.initializeApp(config);
-                    setDb(firebase.firestore());
+                    if (!window.firebase.apps.length) window.firebase.initializeApp(config);
+                    setDb(window.firebase.firestore());
                 } catch (error) { setNeedConfig(true); }
             }, []);
 
@@ -107,7 +111,7 @@
                 const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(300).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(200).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
                 
                 const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
                     if(doc.exists) {
@@ -137,94 +141,104 @@
                     if (p.length === 3) {
                         let d = parseInt(p[0]), m = parseInt(p[1]), y = parseInt(p[2]);
                         if (m > 12) { d = parseInt(p[1]); m = parseInt(p[0]); }
-                        else if (m > 3 && d <= 3 && y === 2026) { d = parseInt(p[1]); m = parseInt(p[0]); }
                         return new Date(y, m-1, d);
                     }
                 }
                 return new Date();
             };
 
-            // GRÁFICAS
+            // GRÁFICAS DASHBOARD
             useEffect(() => {
                 if (view === 'dashboard' && chartRef.current) {
-                    if (chartInstance.current) chartInstance.current.destroy();
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
 
                     let labels = [];
                     let data = [];
                     let labelName = 'Ventas ($)';
 
                     if (tipoGrafica === 'mes') {
-                        const datosMes = {};
+                        const res = {};
                         cortes.forEach(c => {
                             const f = obtenerFechaSegura(c);
-                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}`;
-                            datosMes[key] = (datosMes[key] || 0) + c.total;
+                            const k = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}`;
+                            res[k] = (res[k] || 0) + c.total;
                         });
-                        const sortedKeys = Object.keys(datosMes).sort();
-                        labels = sortedKeys.map(k => {
+                        labels = Object.keys(res).sort().map(k => {
                             const [y, m] = k.split('-');
                             return new Date(y, m-1).toLocaleDateString('es-MX', {month:'short'}).toUpperCase() + ' ' + y;
                         });
-                        data = sortedKeys.map(k => datosMes[k]);
+                        data = Object.keys(res).sort().map(k => res[k]);
                         
                     } else if (tipoGrafica === 'dia') {
-                        const datosDia = {};
+                        const res = {};
                         cortes.forEach(c => {
                             const f = obtenerFechaSegura(c);
-                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}-${f.getDate().toString().padStart(2,'0')}`;
-                            datosDia[key] = (datosDia[key] || 0) + c.total;
+                            const k = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}-${f.getDate().toString().padStart(2,'0')}`;
+                            res[k] = (res[k] || 0) + c.total;
                         });
-                        const sortedKeys = Object.keys(datosDia).sort().slice(-15); 
-                        labels = sortedKeys.map(k => {
+                        labels = Object.keys(res).sort().slice(-15).map(k => {
                             const [y, m, d] = k.split('-');
                             return `${d}/${m}`; 
                         });
-                        data = sortedKeys.map(k => datosDia[k]);
+                        data = Object.keys(res).sort().slice(-15).map(k => res[k]);
                         
                     } else if (tipoGrafica === 'producto') {
-                        const aggProd = {};
-                        tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => aggProd[i.nombre] = (aggProd[i.nombre]||0) + i.qty));
-                        cortes.forEach(c => {
-                            if(c.detalle_productos) Object.keys(c.detalle_productos).forEach(k => aggProd[k] = (aggProd[k]||0) + c.detalle_productos[k]);
+                        const res = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                            t.items.forEach(i => res[i.nombre] = (res[i.nombre]||0) + i.qty);
                         });
-                        const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10);
+                        cortes.forEach(c => {
+                            if(c.detalle_productos) {
+                                Object.keys(c.detalle_productos).forEach(k => res[k] = (res[k]||0) + c.detalle_productos[k]);
+                            }
+                        });
+                        const sorted = Object.entries(res).sort((a,b)=>b[1]-a[1]).slice(0,10);
                         labels = sorted.map(x => x[0].length > 10 ? x[0].substring(0,10)+'...' : x[0]);
                         data = sorted.map(x => x[1]);
                         labelName = 'Unidades Vendidas';
                         
                     } else if (tipoGrafica === 'vendedor') {
-                        const aggVend = {};
-                        employees.forEach(emp => { aggVend[emp.nombre] = 0; });
+                        const res = {};
+                        employees.forEach(emp => {
+                            res[emp.nombre] = 0;
+                        });
+
                         const hace7Dias = new Date();
                         hace7Dias.setDate(hace7Dias.getDate() - 7);
                         hace7Dias.setHours(0,0,0,0);
 
-                        tickets.filter(t=>t.tipo==='Venta').forEach(t => { aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total; });
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                            res[t.vendedor] = (res[t.vendedor]||0) + t.total;
+                        });
                         
                         cortes.forEach(c => {
                             const f = obtenerFechaSegura(c);
                             if (f >= hace7Dias && c.detalle_vendedores) {
                                 Object.keys(c.detalle_vendedores).forEach(k => {
-                                    aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k];
+                                    res[k] = (res[k]||0) + c.detalle_vendedores[k];
                                 });
                             }
                         });
                         
-                        const sorted = Object.entries(aggVend).sort((a,b)=>b[1]-a[1]);
+                        const sorted = Object.entries(res).sort((a,b)=>b[1]-a[1]);
                         labels = sorted.map(x => x[0]);
                         data = sorted.map(x => x[1]);
                         labelName = 'Ventas últimos 7 días ($)';
                         
                     } else if (tipoGrafica === 'hora') {
-                        const aggHora = {};
+                        const res = {};
                         tickets.filter(t=>t.tipo==='Venta').forEach(t => {
                             const h = t.hora.split(':')[0] + ':00';
-                            aggHora[h] = (aggHora[h]||0) + t.total;
+                            res[h] = (res[h]||0) + t.total;
                         });
                         cortes.forEach(c => {
-                            if(c.detalle_horas) Object.keys(c.detalle_horas).forEach(k => aggHora[k] = (aggHora[k]||0) + c.detalle_horas[k]);
+                            if(c.detalle_horas) {
+                                Object.keys(c.detalle_horas).forEach(k => res[h] = (res[h]||0) + c.detalle_horas[k]);
+                            }
                         });
-                        const sorted = Object.entries(aggHora).sort((a,b)=> parseInt(a[0]) - parseInt(b[0]));
+                        const sorted = Object.entries(res).sort((a,b)=> parseInt(a[0]) - parseInt(b[0]));
                         labels = sorted.map(x => x[0]);
                         data = sorted.map(x => x[1]);
                         labelName = 'Picos de Venta ($)';
@@ -243,9 +257,13 @@
                             }]
                         },
                         options: {
-                            responsive: true, maintainAspectRatio: false,
+                            responsive: true, 
+                            maintainAspectRatio: false,
                             plugins: { legend: { display: false } },
-                            scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } }
+                            scales: { 
+                                y: { beginAtZero: true, grid: { display: false } }, 
+                                x: { grid: { display: false } } 
+                            }
                         }
                     });
                 }
@@ -261,14 +279,19 @@
                 });
                 return grupos;
             };
+            
             const cortesPorMes = agruparCortesPorMes();
 
             const handleSaveConfig = () => {
                 let val = document.getElementById('fb-config-input').value;
                 val = val.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
                 try {
-                    JSON.parse(val); localStorage.setItem('fb_config', val); window.location.reload();
-                } catch(e) { alert("El código tiene un error. Revisa las comillas."); }
+                    JSON.parse(val); 
+                    localStorage.setItem('fb_config', val); 
+                    window.location.reload();
+                } catch(e) { 
+                    alert("El código tiene un error. Revisa las comillas."); 
+                }
             };
 
             const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
@@ -292,15 +315,7 @@
                 const tp = Object.entries(prodSales).sort((a,b)=>b[1]-a[1])[0]; if(tp) topProd = `${tp[0]} (${tp[1]} pzas)`;
                 const th = Object.entries(hourSales).sort((a,b)=>b[1]-a[1])[0]; if(th) topHour = `${th[0]}:00 hrs`;
             }
-            if (cortes.length > 0) {
-                const daySales = {}; cortes.forEach(c => {
-                    const f = obtenerFechaSegura(c);
-                    const fStr = f.toLocaleDateString('es-MX');
-                    daySales[fStr] = (daySales[fStr] || 0) + c.total;
-                });
-                const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
-            }
-
+            
             const orphanedProducts = products.filter(p => {
                 const productCat = (p.categoria || '').trim().toUpperCase();
                 const validCats = categories.map(c => c.trim().toUpperCase());
@@ -318,15 +333,19 @@
             const finalizarOperacion = async () => {
                 const batch = db.batch();
                 batch.set(db.collection('tickets').doc(), {
-                    vendedor: user.nombre, items: cart, total: totalFinal, 
-                    descuento: discountPct, cortado: false, tipo: tipoVenta,
+                    vendedor: user.nombre, 
+                    items: cart, 
+                    total: totalFinal, 
+                    descuento: discountPct, 
+                    cortado: false, 
+                    tipo: tipoVenta,
                     hora: new Date().toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}),
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
                 cart.forEach(i => { 
                     const stockDelta = tipoVenta === 'Devolución' ? i.qty : -i.qty;
-                    batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(stockDelta) }); 
+                    batch.update(db.collection('productos').doc(i.id), { stock: window.firebase.firestore.FieldValue.increment(stockDelta) }); 
                 });
                 
                 await batch.commit();
@@ -358,7 +377,7 @@
                     detalle_productos: resumenProd,
                     detalle_vendedores: resumenVend,
                     detalle_horas: resumenHora,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    timestamp: window.firebase.firestore.FieldValue.serverTimestamp()
                 });
                 
                 tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), {cortado: true, corteId: corteRef.id}));
@@ -392,17 +411,17 @@
             };
             
             const handleAddProduct = () => {
-                const n = prompt("Nombre del Sabor:"); 
-                if(!n) return;
-                const sub = prompt("División/Subcategoría (Opcional. Ej. AGUA, CREMA, CHICO... O deja vacío para normal):") || '';
-                const p = prompt("Precio $:"); 
-                if(!p) return;
-                const s = prompt("Stock inicial:");
-                if(!s) return;
+                const n = prompt("Nombre del Sabor:"); if(!n) return;
+                const sub = prompt("División/Subcategoría (Opcional):") || '';
+                const p = prompt("Precio $:"); if(!p) return;
+                const s = prompt("Stock inicial:"); if(!s) return;
 
                 db.collection('productos').add({
-                    nombre: n.toUpperCase(), subcategoria: sub.toUpperCase(),
-                    precio: Number(p), stock: Number(s), categoria: catActiva.toUpperCase()
+                    nombre: n.toUpperCase(), 
+                    subcategoria: sub.toUpperCase(),
+                    precio: Number(p), 
+                    stock: Number(s), 
+                    categoria: catActiva.toUpperCase()
                 });
             };
 
