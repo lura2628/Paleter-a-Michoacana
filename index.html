@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Michoacana Pro - Gráficas en Pestaña Nueva</title>
+    <title>Michoacana Pro - Código Completo</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -144,7 +144,7 @@
                 return new Date();
             };
 
-            // LÓGICA DE GRÁFICAS AHORA EN LA PESTAÑA 'dashboard'
+            // GRÁFICAS
             useEffect(() => {
                 if (view === 'dashboard' && chartRef.current) {
                     if (chartInstance.current) chartInstance.current.destroy();
@@ -194,27 +194,19 @@
                         
                     } else if (tipoGrafica === 'vendedor') {
                         const aggVend = {};
-                        
-                        employees.forEach(emp => {
-                            aggVend[emp.nombre] = 0;
-                        });
-
+                        employees.forEach(emp => { aggVend[emp.nombre] = 0; });
                         const hace7Dias = new Date();
                         hace7Dias.setDate(hace7Dias.getDate() - 7);
                         hace7Dias.setHours(0,0,0,0);
 
-                        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
-                            aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total;
-                        });
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => { aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total; });
                         
                         cortes.forEach(c => {
                             const f = obtenerFechaSegura(c);
-                            if (f >= hace7Dias) {
-                                if(c.detalle_vendedores) {
-                                    Object.keys(c.detalle_vendedores).forEach(k => {
-                                        aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k];
-                                    });
-                                }
+                            if (f >= hace7Dias && c.detalle_vendedores) {
+                                Object.keys(c.detalle_vendedores).forEach(k => {
+                                    aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k];
+                                });
                             }
                         });
                         
@@ -526,7 +518,6 @@
                         <span className="font-black italic uppercase text-xl">Michoacana Pro</span>
                         <div className="flex gap-4 items-center">
                             <button onClick={() => {setView('pos'); setSelectedCorte(null);}} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
-                            {/* NUEVO BOTÓN DE PESTAÑA PARA GRÁFICAS */}
                             {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('dashboard'); setSelectedCorte(null);}} className={`text-2xl ${view==='dashboard'?'scale-125':''}`}>📈</button>}
                             {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('history'); setSelectedCorte(null);}} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
                             {user.rol === 'admin' && <button onClick={() => setView('admin')} className={`text-2xl ${view==='admin'?'scale-125':''}`}>📦</button>}
@@ -669,7 +660,6 @@
                         </div>
                     )}
 
-                    {/* NUEVA PESTAÑA DE DASHBOARD (GRÁFICAS) */}
                     {view === 'dashboard' && (
                         <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
                             <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
@@ -805,26 +795,6 @@
                                         <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-3 mb-6">
-                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-yellow-400">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Producto Top 🌟</p>
-                                            <p className="font-black text-sm text-slate-800 leading-tight">{topProd}</p>
-                                        </div>
-                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-green-400">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendedor Top 🥇</p>
-                                            <p className="font-black text-sm text-slate-800 leading-tight">{topEmp}</p>
-                                        </div>
-                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-purple-400">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Hora Pico ⏰</p>
-                                            <p className="font-black text-sm text-slate-800 leading-tight">{topHour}</p>
-                                        </div>
-                                        <div className="bg-white p-4 rounded-3xl shadow-sm border-l-4 border-blue-400">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Mejor Día 📅</p>
-                                            <p className="font-black text-sm text-slate-800 leading-tight">{bestDay}</p>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* AQUÍ ESTÁ LA LISTA DE VENTAS DEL DÍA RESTAURADA */}
                                     <div className="mb-8">
                                         <h2 className="font-black uppercase text-pink-600 mb-3 text-sm">🧾 Ventas del Día (Caja Actual)</h2>
                                         <div className="space-y-3">
