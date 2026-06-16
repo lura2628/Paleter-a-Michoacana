@@ -1,575 +1,864 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Michoacana Pro</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    @keyframes pulse-red{0%,100%{background-color:#ef4444;}50%{background-color:#f87171;}}
-    @keyframes pulse-blue{0%,100%{background-color:#3b82f6;}50%{background-color:#93c5fd;}}
-    .animate-alert{animation:pulse-red 1.5s infinite;}
-    .animate-listening{animation:pulse-blue 1s infinite;}
-    .cart-panel{transition:transform 0.4s cubic-bezier(0.4,0,0.2,1);border-radius:40px 40px 0 0;}
-    .cart-hidden{transform:translateY(calc(100% - 70px));}
-    input[type=number]::-webkit-inner-spin-button{display:none;}
-    .scroll-hide::-webkit-scrollbar{display:none;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Michoacana Pro - Código Completo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @keyframes pulse-red { 0%, 100% { background-color: #ef4444; } 50% { background-color: #f87171; } }
+        @keyframes pulse-blue { 0%, 100% { background-color: #3b82f6; } 50% { background-color: #93c5fd; } }
+        .animate-alert { animation: pulse-red 1.5s infinite; }
+        .animate-listening { animation: pulse-blue 1s infinite; }
+        .cart-panel { transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 40px 40px 0 0; }
+        .cart-hidden { transform: translateY(calc(100% - 70px)); }
+        input[type=number]::-webkit-inner-spin-button { display: none; }
+        .scroll-hide::-webkit-scrollbar { display: none; }
+    </style>
 </head>
 <body class="bg-slate-100 font-sans select-none text-slate-900">
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
-    const TIEMPO_SESION = 5 * 60 * 60 * 1000; 
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-    const App = () => {
-      const [db, setDb] = useState(null);
-      const [user, setUser] = useState(() => {
-        try { 
-          const saved = localStorage.getItem('michoacana_user'), savedTime = localStorage.getItem('michoacana_user_time');
-          if (saved && savedTime && (Date.now() - Number(savedTime) < TIEMPO_SESION)) return JSON.parse(saved); 
-          localStorage.removeItem('michoacana_user'); localStorage.removeItem('michoacana_user_time'); return null;
-        } catch(e) { return null; }
-      });
-      const [view, setView] = useState(() => {
-        try { 
-          const saved = localStorage.getItem('michoacana_user'), savedTime = localStorage.getItem('michoacana_user_time');
-          if (saved && savedTime && (Date.now() - Number(savedTime) < TIEMPO_SESION)) return 'pos'; return 'login';
-        } catch(e) { return 'login'; }
-      });
+        const TIEMPO_SESION = 5 * 60 * 60 * 1000; 
 
-      const [products, setProducts] = useState([]);
-      const [employees, setEmployees] = useState([]);
-      const [tickets, setTickets] = useState([]);
-      const [cortes, setCortes] = useState([]);
-      const [categories, setCategories] = useState(['Paletas', 'Nieve', 'Trolly']);
-      const [cart, setCart] = useState([]);
-      const [discountPct, setDiscountPct] = useState(0);
-      const [catActiva, setCatActiva] = useState('Paletas');
-      const [showCart, setShowCart] = useState(false);
-      const [pagoCon, setPagoCon] = useState('');
-      const [tipoVenta, setTipoVenta] = useState('Venta');
-      const [searchTerm, setSearchTerm] = useState('');
-      const [needConfig, setNeedConfig] = useState(false);
-      const [isListening, setIsListening] = useState(false);
-      const [selectedCorte, setSelectedCorte] = useState(null);
-      const [corteTickets, setCorteTickets] = useState([]);
-      const chartRef = useRef(null);
-      const chartInstance = useRef(null);
-      const [tipoGrafica, setTipoGrafica] = useState('dia'); 
+        const App = () => {
+            const [db, setDb] = useState(null);
+            
+            const [user, setUser] = useState(() => {
+                try { 
+                    const saved = localStorage.getItem('michoacana_user'); 
+                    const savedTime = localStorage.getItem('michoacana_user_time');
+                    if (saved && savedTime && (Date.now() - Number(savedTime) < TIEMPO_SESION)) {
+                        return JSON.parse(saved); 
+                    }
+                    localStorage.removeItem('michoacana_user');
+                    localStorage.removeItem('michoacana_user_time');
+                    return null;
+                } catch(e) { return null; }
+            });
+            const [view, setView] = useState(() => {
+                try { 
+                    const saved = localStorage.getItem('michoacana_user'); 
+                    const savedTime = localStorage.getItem('michoacana_user_time');
+                    if (saved && savedTime && (Date.now() - Number(savedTime) < TIEMPO_SESION)) return 'pos';
+                    return 'login';
+                } catch(e) { return 'login'; }
+            });
 
-      useEffect(() => {
-        const handleVisibility = () => {
-          if (document.visibilityState === 'visible') {
-            const savedTime = localStorage.getItem('michoacana_user_time');
-            if (savedTime && (Date.now() - Number(savedTime) > TIEMPO_SESION)) {
-              setUser(null); setView('login');
-              localStorage.removeItem('michoacana_user'); localStorage.removeItem('michoacana_user_time');
-              alert("Por seguridad, la sesión ha expirado. Ingresa tu PIN de nuevo.");
+            const [products, setProducts] = useState([]);
+            const [employees, setEmployees] = useState([]);
+            const [tickets, setTickets] = useState([]);
+            const [cortes, setCortes] = useState([]);
+            const [categories, setCategories] = useState(['Paletas', 'Nieve', 'Trolly']);
+            const [cart, setCart] = useState([]);
+            const [discountPct, setDiscountPct] = useState(0);
+            const [catActiva, setCatActiva] = useState('Paletas');
+            const [showCart, setShowCart] = useState(false);
+            const [pagoCon, setPagoCon] = useState('');
+            const [tipoVenta, setTipoVenta] = useState('Venta');
+            const [searchTerm, setSearchTerm] = useState('');
+            const [needConfig, setNeedConfig] = useState(false);
+            
+            const [isListening, setIsListening] = useState(false);
+            const [selectedCorte, setSelectedCorte] = useState(null);
+            const [corteTickets, setCorteTickets] = useState([]);
+            
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+            const [tipoGrafica, setTipoGrafica] = useState('dia'); 
+
+            useEffect(() => {
+                const handleVisibility = () => {
+                    if (document.visibilityState === 'visible') {
+                        const savedTime = localStorage.getItem('michoacana_user_time');
+                        if (savedTime && (Date.now() - Number(savedTime) > TIEMPO_SESION)) {
+                            setUser(null);
+                            setView('login');
+                            localStorage.removeItem('michoacana_user');
+                            localStorage.removeItem('michoacana_user_time');
+                            alert("Por seguridad, la sesión ha expirado. Ingresa tu PIN de nuevo.");
+                        }
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVisibility);
+                return () => document.removeEventListener('visibilitychange', handleVisibility);
+            }, []);
+
+            useEffect(() => {
+                const configStr = localStorage.getItem('fb_config');
+                if (!configStr) { setNeedConfig(true); return; }
+                try {
+                    const config = JSON.parse(configStr);
+                    if (!firebase.apps.length) firebase.initializeApp(config);
+                    setDb(firebase.firestore());
+                } catch (error) { setNeedConfig(true); }
+            }, []);
+
+            useEffect(() => {
+                if (!db) return;
+                const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(300).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
+                
+                const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
+                    if(doc.exists) {
+                        setCategories(doc.data().lista.filter(c => c !== 'Venta Libre'));
+                    } else {
+                        db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly']});
+                    }
+                });
+                return () => { u1(); u2(); u3(); u4(); u5(); };
+            }, [db]);
+
+            useEffect(() => {
+                if(selectedCorte && db) {
+                    db.collection('tickets').where('corteId', '==', selectedCorte.id).get()
+                    .then(snap => {
+                        const tks = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                        tks.sort((a,b) => b.timestamp - a.timestamp);
+                        setCorteTickets(tks);
+                    });
+                }
+            }, [selectedCorte, db]);
+
+            const obtenerFechaSegura = (c) => {
+                if (c.timestamp && typeof c.timestamp.toDate === 'function') return c.timestamp.toDate();
+                if (c.fecha) {
+                    const p = c.fecha.split('/');
+                    if (p.length === 3) {
+                        let d = parseInt(p[0]), m = parseInt(p[1]), y = parseInt(p[2]);
+                        if (m > 12) { d = parseInt(p[1]); m = parseInt(p[0]); }
+                        else if (m > 3 && d <= 3 && y === 2026) { d = parseInt(p[1]); m = parseInt(p[0]); }
+                        return new Date(y, m-1, d);
+                    }
+                }
+                return new Date();
+            };
+
+            // GRÁFICAS
+            useEffect(() => {
+                if (view === 'dashboard' && chartRef.current) {
+                    if (chartInstance.current) chartInstance.current.destroy();
+
+                    let labels = [];
+                    let data = [];
+                    let labelName = 'Ventas ($)';
+
+                    if (tipoGrafica === 'mes') {
+                        const datosMes = {};
+                        cortes.forEach(c => {
+                            const f = obtenerFechaSegura(c);
+                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}`;
+                            datosMes[key] = (datosMes[key] || 0) + c.total;
+                        });
+                        const sortedKeys = Object.keys(datosMes).sort();
+                        labels = sortedKeys.map(k => {
+                            const [y, m] = k.split('-');
+                            return new Date(y, m-1).toLocaleDateString('es-MX', {month:'short'}).toUpperCase() + ' ' + y;
+                        });
+                        data = sortedKeys.map(k => datosMes[k]);
+                        
+                    } else if (tipoGrafica === 'dia') {
+                        const datosDia = {};
+                        cortes.forEach(c => {
+                            const f = obtenerFechaSegura(c);
+                            const key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}-${f.getDate().toString().padStart(2,'0')}`;
+                            datosDia[key] = (datosDia[key] || 0) + c.total;
+                        });
+                        const sortedKeys = Object.keys(datosDia).sort().slice(-15); 
+                        labels = sortedKeys.map(k => {
+                            const [y, m, d] = k.split('-');
+                            return `${d}/${m}`; 
+                        });
+                        data = sortedKeys.map(k => datosDia[k]);
+                        
+                    } else if (tipoGrafica === 'producto') {
+                        const aggProd = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => aggProd[i.nombre] = (aggProd[i.nombre]||0) + i.qty));
+                        cortes.forEach(c => {
+                            if(c.detalle_productos) Object.keys(c.detalle_productos).forEach(k => aggProd[k] = (aggProd[k]||0) + c.detalle_productos[k]);
+                        });
+                        const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10);
+                        labels = sorted.map(x => x[0].length > 10 ? x[0].substring(0,10)+'...' : x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Unidades Vendidas';
+                        
+                    } else if (tipoGrafica === 'vendedor') {
+                        const aggVend = {};
+                        employees.forEach(emp => { aggVend[emp.nombre] = 0; });
+                        const hace7Dias = new Date();
+                        hace7Dias.setDate(hace7Dias.getDate() - 7);
+                        hace7Dias.setHours(0,0,0,0);
+
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => { aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total; });
+                        
+                        cortes.forEach(c => {
+                            const f = obtenerFechaSegura(c);
+                            if (f >= hace7Dias && c.detalle_vendedores) {
+                                Object.keys(c.detalle_vendedores).forEach(k => {
+                                    aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k];
+                                });
+                            }
+                        });
+                        
+                        const sorted = Object.entries(aggVend).sort((a,b)=>b[1]-a[1]);
+                        labels = sorted.map(x => x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Ventas últimos 7 días ($)';
+                        
+                    } else if (tipoGrafica === 'hora') {
+                        const aggHora = {};
+                        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                            const h = t.hora.split(':')[0] + ':00';
+                            aggHora[h] = (aggHora[h]||0) + t.total;
+                        });
+                        cortes.forEach(c => {
+                            if(c.detalle_horas) Object.keys(c.detalle_horas).forEach(k => aggHora[k] = (aggHora[k]||0) + c.detalle_horas[k]);
+                        });
+                        const sorted = Object.entries(aggHora).sort((a,b)=> parseInt(a[0]) - parseInt(b[0]));
+                        labels = sorted.map(x => x[0]);
+                        data = sorted.map(x => x[1]);
+                        labelName = 'Picos de Venta ($)';
+                    }
+
+                    const ctx = chartRef.current.getContext('2d');
+                    chartInstance.current = new window.Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: labelName,
+                                data: data,
+                                backgroundColor: '#ec4899',
+                                borderRadius: 6,
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } }
+                        }
+                    });
+                }
+            }, [view, cortes, tickets, tipoGrafica, employees]);
+
+            const agruparCortesPorMes = () => {
+                const grupos = {};
+                cortes.forEach(c => {
+                    const fechaObj = obtenerFechaSegura(c);
+                    const mesAnio = fechaObj.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }).toUpperCase();
+                    if (!grupos[mesAnio]) grupos[mesAnio] = [];
+                    grupos[mesAnio].push(c);
+                });
+                return grupos;
+            };
+            const cortesPorMes = agruparCortesPorMes();
+
+            const handleSaveConfig = () => {
+                let val = document.getElementById('fb-config-input').value;
+                val = val.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
+                try {
+                    JSON.parse(val); localStorage.setItem('fb_config', val); window.location.reload();
+                } catch(e) { alert("El código tiene un error. Revisa las comillas."); }
+            };
+
+            const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
+            const totalFinal = (tipoVenta === 'Venta' || tipoVenta === 'Devolución') ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
+            const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
+            
+            const ventasActuales = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
+            const devolucionesActuales = tickets.filter(t=>t.tipo==='Devolución').reduce((a,b)=>a+b.total, 0);
+            const totalCajaActual = ventasActuales - devolucionesActuales;
+
+            let topEmp = '-', topProd = '-', topHour = '-', bestDay = '-';
+            if (tickets.length > 0) {
+                const empSales = {}, prodSales = {}, hourSales = {};
+                tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                    empSales[t.vendedor] = (empSales[t.vendedor] || 0) + t.total;
+                    const h = t.hora.split(':')[0]; 
+                    hourSales[h] = (hourSales[h] || 0) + 1;
+                    t.items.forEach(i => prodSales[i.nombre] = (prodSales[i.nombre] || 0) + i.qty);
+                });
+                const te = Object.entries(empSales).sort((a,b)=>b[1]-a[1])[0]; if(te) topEmp = `${te[0]} ($${te[1]})`;
+                const tp = Object.entries(prodSales).sort((a,b)=>b[1]-a[1])[0]; if(tp) topProd = `${tp[0]} (${tp[1]} pzas)`;
+                const th = Object.entries(hourSales).sort((a,b)=>b[1]-a[1])[0]; if(th) topHour = `${th[0]}:00 hrs`;
             }
-          }
-        };
-        document.addEventListener('visibilitychange', handleVisibility);
-        return () => document.removeEventListener('visibilitychange', handleVisibility);
-      }, []);
+            if (cortes.length > 0) {
+                const daySales = {}; cortes.forEach(c => {
+                    const f = obtenerFechaSegura(c);
+                    const fStr = f.toLocaleDateString('es-MX');
+                    daySales[fStr] = (daySales[fStr] || 0) + c.total;
+                });
+                const td = Object.entries(daySales).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
+            }
 
-      useEffect(() => {
-        const configStr = localStorage.getItem('fb_config');
-        if (!configStr) { setNeedConfig(true); return; }
-        try {
-          const config = JSON.parse(configStr);
-          if (!firebase.apps.length) firebase.initializeApp(config);
-          setDb(firebase.firestore());
-        } catch (error) { setNeedConfig(true); }
-      }, []);
-
-      useEffect(() => {
-        if (!db) return;
-        const u1 = db.collection('productos').onSnapshot(s => setProducts(s.docs.map(d => ({id:d.id, ...d.data()}))));
-        const u2 = db.collection('empleados').onSnapshot(s => setEmployees(s.docs.map(d => ({id:d.id, ...d.data()}))));
-        const u3 = db.collection('tickets').where('cortado', '==', false).onSnapshot(s => setTickets(s.docs.map(d => ({id:d.id, ...d.data()}))));
-        const u4 = db.collection('cortes').orderBy('timestamp', 'desc').limit(300).onSnapshot(s => setCortes(s.docs.map(d => ({id:d.id, ...d.data()}))));
-        const u5 = db.collection('config').doc('categorias').onSnapshot(doc => {
-          if(doc.exists) setCategories(doc.data().lista.filter(c => c !== 'Venta Libre'));
-          else db.collection('config').doc('categorias').set({lista: ['Paletas', 'Nieve', 'Trolly']});
-        });
-        return () => { u1(); u2(); u3(); u4(); u5(); };
-      }, [db]);
-
-      useEffect(() => {
-        if(selectedCorte && db) {
-          db.collection('tickets').where('corteId', '==', selectedCorte.id).get()
-          .then(snap => {
-            const tks = snap.docs.map(d => ({id: d.id, ...d.data()}));
-            tks.sort((a,b) => b.timestamp - a.timestamp); setCorteTickets(tks);
-          });
-        }
-      }, [selectedCorte, db]);
-
-      const obtenerFechaSegura = (c) => {
-        if (c.timestamp && typeof c.timestamp.toDate === 'function') return c.timestamp.toDate();
-        if (c.fecha) {
-          const p = c.fecha.split('/');
-          if (p.length === 3) {
-            let d = parseInt(p[0]), m = parseInt(p[1]), y = parseInt(p[2]);
-            if (m > 12) { d = parseInt(p[1]); m = parseInt(p[0]); }
-            else if (m > 3 && d <= 3 && y === 2026) { d = parseInt(p[1]); m = parseInt(p[0]); }
-            return new Date(y, m-1, d);
-          }
-        }
-        return new Date();
-      };
-
-      useEffect(() => {
-        if (view === 'dashboard' && chartRef.current) {
-          if (chartInstance.current) chartInstance.current.destroy();
-          let labels = [], data = [], labelName = 'Ventas ($)';
-          if (tipoGrafica === 'mes') {
-            const datosMes = {};
-            cortes.forEach(c => {
-              const f = obtenerFechaSegura(c), key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}`;
-              datosMes[key] = (datosMes[key] || 0) + c.total;
+            const orphanedProducts = products.filter(p => {
+                const productCat = (p.categoria || '').trim().toUpperCase();
+                const validCats = categories.map(c => c.trim().toUpperCase());
+                return !validCats.includes(productCat);
             });
-            const sortedKeys = Object.keys(datosMes).sort();
-            labels = sortedKeys.map(k => { const [y, m] = k.split('-'); return new Date(y, m-1).toLocaleDateString('es-MX', {month:'short'}).toUpperCase() + ' ' + y; });
-            data = sortedKeys.map(k => datosMes[k]);
-          } else if (tipoGrafica === 'dia') {
-            const datosDia = {};
-            cortes.forEach(c => {
-              const f = obtenerFechaSegura(c), key = `${f.getFullYear()}-${(f.getMonth()+1).toString().padStart(2,'0')}-${f.getDate().toString().padStart(2,'0')}`;
-              datosDia[key] = (datosDia[key] || 0) + c.total;
-            });
-            const sortedKeys = Object.keys(datosDia).sort().slice(-15); 
-            labels = sortedKeys.map(k => { const [y, m, d] = k.split('-'); return `${d}/${m}`; });
-            data = sortedKeys.map(k => datosDia[k]);
-          } else if (tipoGrafica === 'producto') {
-            const aggProd = {};
-            tickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => aggProd[i.nombre] = (aggProd[i.nombre]||0) + i.qty));
-            cortes.forEach(c => { if(c.detalle_productos) Object.keys(c.detalle_productos).forEach(k => aggProd[k] = (aggProd[k]||0) + c.detalle_productos[k]); });
-            const sorted = Object.entries(aggProd).sort((a,b)=>b[1]-a[1]).slice(0,10);
-            labels = sorted.map(x => x[0].length > 10 ? x[0].substring(0,10)+'...' : x[0]);
-            data = sorted.map(x => x[1]); labelName = 'Unidades Vendidas';
-          } else if (tipoGrafica === 'vendedor') {
-            const aggVend = {};
-            employees.forEach(emp => { aggVend[emp.nombre] = 0; });
-            const hace7Dias = new Date(); hace7Dias.setDate(hace7Dias.getDate() - 7); hace7Dias.setHours(0,0,0,0);
-            tickets.filter(t=>t.tipo==='Venta').forEach(t => { aggVend[t.vendedor] = (aggVend[t.vendedor]||0) + t.total; });
-            cortes.forEach(c => {
-              const f = obtenerFechaSegura(c);
-              if (f >= hace7Dias && c.detalle_vendedores) { Object.keys(c.detalle_vendedores).forEach(k => { aggVend[k] = (aggVend[k]||0) + c.detalle_vendedores[k]; }); }
-            });
-            const sorted = Object.entries(aggVend).sort((a,b)=>b[1]-a[1]);
-            labels = sorted.map(x => x[0]); data = sorted.map(x => x[1]); labelName = 'Ventas últimos 7 días ($)';
-          } else if (tipoGrafica === 'hora') {
-            const aggHora = {};
-            tickets.filter(t=>t.tipo==='Venta').forEach(t => { const h = t.hora.split(':')[0] + ':00'; aggHora[h] = (aggHora[h]||0) + t.total; });
-            cortes.forEach(c => { if(c.detalle_horas) Object.keys(c.detalle_horas).forEach(k => aggHora[k] = (aggHora[k]||0) + c.detalle_horas[k]); });
-            const sorted = Object.entries(aggHora).sort((a,b)=> parseInt(a[0]) - parseInt(b[0]));
-            labels = sorted.map(x => x[0]); data = sorted.map(x => x[1]); labelName = 'Picos de Venta ($)';
-          }
-          const ctx = chartRef.current.getContext('2d');
-          chartInstance.current = new window.Chart(ctx, {
-            type: 'bar',
-            data: { labels, datasets: [{ label: labelName, data, backgroundColor: '#ec4899', borderRadius: 6 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { display: false } }, x: { grid: { display: false } } } }
-          });
-        }
-      }, [view, cortes, tickets, tipoGrafica, employees]);
 
-      const agruparCortesPorMes = () => {
-        const grupos = {};
-        cortes.forEach(c => {
-          const f = obtenerFechaSegura(c), mesAnio = f.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }).toUpperCase();
-          if (!grupos[mesAnio]) grupos[mesAnio] = [];
-          grupos[mesAnio].push(c);
-        });
-        return grupos;
-      };
-      const cortesPorMes = agruparCortesPorMes();
+            const agregarAlCarrito = (producto) => {
+                setCart(prev => {
+                    const ex = prev.find(i => i.id === producto.id);
+                    if(ex) return prev.map(i => i.id === producto.id ? {...i, qty: i.qty+1} : i);
+                    return [...prev, {...producto, qty: 1}];
+                });
+            };
 
-      const handleSaveConfig = () => {
-        let val = document.getElementById('fb-config-input').value.replace(/“/g, '"').replace(/”/g, '"').replace(/‘/g, '"').replace(/’/g, '"'); 
-        try { JSON.parse(val); localStorage.setItem('fb_config', val); window.location.reload(); } catch(e) { alert("Error en comillas"); }
-      };
+            const finalizarOperacion = async () => {
+                const batch = db.batch();
+                batch.set(db.collection('tickets').doc(), {
+                    vendedor: user.nombre, items: cart, total: totalFinal, 
+                    descuento: discountPct, cortado: false, tipo: tipoVenta,
+                    hora: new Date().toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                cart.forEach(i => { 
+                    const stockDelta = tipoVenta === 'Devolución' ? i.qty : -i.qty;
+                    batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(stockDelta) }); 
+                });
+                
+                await batch.commit();
+                setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta'); setSearchTerm('');
+            };
 
-      const subtotal = cart.reduce((a, b) => a + (Number(b.precio) * b.qty), 0);
-      const totalFinal = (tipoVenta === 'Venta' || tipoVenta === 'Devolución') ? Math.round(subtotal * (1 - discountPct / 100)) : 0;
-      const cambio = pagoCon ? Number(pagoCon) - totalFinal : 0;
-      const ventasActuales = tickets.filter(t=>t.tipo==='Venta').reduce((a,b)=>a+b.total, 0);
-      const devolucionesActuales = tickets.filter(t=>t.tipo==='Devolución').reduce((a,b)=>a+b.total, 0);
-      const totalCajaActual = ventasActuales - devolucionesActuales;
+            const hacerCorteCaja = async () => {
+                if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
+                
+                const resumenProd = {};
+                const resumenVend = {};
+                const resumenHora = {};
 
-      let topEmp = '-', topProd = '-', topHour = '-', bestDay = '-';
-      if (tickets.length > 0) {
-        const empS = {}, prodS = {}, hourS = {};
-        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
-          empS[t.vendedor] = (empS[t.vendedor] || 0) + t.total;
-          const h = t.hora.split(':')[0]; hourS[h] = (hourS[h] || 0) + 1;
-          t.items.forEach(i => prodS[i.nombre] = (prodS[i.nombre] || 0) + i.qty);
-        });
-        const te = Object.entries(empS).sort((a,b)=>b[1]-a[1])[0]; if(te) topEmp = `${te[0]} ($${te[1]})`;
-        const tp = Object.entries(prodS).sort((a,b)=>b[1]-a[1])[0]; if(tp) topProd = `${tp[0]} (${tp[1]} pzas)`;
-        const th = Object.entries(hourS).sort((a,b)=>b[1]-a[1])[0]; if(th) topHour = `${th[0]}:00 hrs`;
-      }
-      if (cortes.length > 0) {
-        const dayS = {}; cortes.forEach(c => { const fStr = obtenerFechaSegura(c).toLocaleDateString('es-MX'); dayS[fStr] = (dayS[fStr] || 0) + c.total; });
-        const td = Object.entries(dayS).sort((a,b)=>b[1]-a[1])[0]; if(td) bestDay = `${td[0]} ($${td[1]})`;
-      }
+                tickets.filter(t=>t.tipo==='Venta').forEach(t => {
+                    resumenVend[t.vendedor] = (resumenVend[t.vendedor] || 0) + t.total;
+                    const h = t.hora.split(':')[0] + ':00';
+                    resumenHora[h] = (resumenHora[h] || 0) + t.total;
+                    t.items.forEach(i => resumenProd[i.nombre] = (resumenProd[i.nombre] || 0) + i.qty);
+                });
+                
+                const batch = db.batch();
+                const corteRef = db.collection('cortes').doc(); 
+                
+                batch.set(corteRef, {
+                    total: totalCajaActual, 
+                    responsable: user.nombre, 
+                    fecha: new Date().toLocaleDateString('es-MX'),
+                    hora: new Date().toLocaleTimeString('es-MX'), 
+                    detalle_productos: resumenProd,
+                    detalle_vendedores: resumenVend,
+                    detalle_horas: resumenHora,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), {cortado: true, corteId: corteRef.id}));
+                await batch.commit();
+            };
 
-      const orphanedProducts = products.filter(p => !categories.map(c=>c.trim().toUpperCase()).includes((p.categoria||'').trim().toUpperCase()));
+            const escucharVoz = () => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) { alert("Voz no soportada aquí."); return; }
+                const recognition = new SpeechRecognition();
+                recognition.lang = 'es-MX'; recognition.continuous = false;
+                recognition.onstart = () => setIsListening(true);
+                recognition.onresult = (event) => {
+                    const texto = event.results[0][0].transcript.toLowerCase();
+                    let encontroAlgo = false;
+                    products.forEach(p => {
+                        if (texto.includes(p.nombre.toLowerCase())) { agregarAlCarrito(p); encontroAlgo = true; }
+                    });
+                    if (!encontroAlgo) alert(`Escuché: "${texto}", pero no encontré el sabor.`);
+                };
+                recognition.onerror = (e) => { alert("Error: " + e.error); setIsListening(false); };
+                recognition.onend = () => setIsListening(false);
+                recognition.start();
+            };
 
-      const agregarAlCarrito = (producto) => setCart(prev => prev.find(i=>i.id===producto.id) ? prev.map(i=>i.id===producto.id?{...i,qty:i.qty+1}:i) : [...prev,{...producto,qty:1}]);
+            const handleUpdateProduct = (id, field, value) => {
+                let finalValue = value;
+                if (field === 'nombre' || field === 'categoria' || field === 'subcategoria') finalValue = value.trim().toUpperCase();
+                if (field === 'stock' || field === 'precio') finalValue = Number(value);
+                db.collection('productos').doc(id).update({ [field]: finalValue });
+            };
+            
+            const handleAddProduct = () => {
+                const n = prompt("Nombre del Sabor:"); 
+                if(!n) return;
+                const sub = prompt("División/Subcategoría (Opcional. Ej. AGUA, CREMA, CHICO... O deja vacío para normal):") || '';
+                const p = prompt("Precio $:"); 
+                if(!p) return;
+                const s = prompt("Stock inicial:");
+                if(!s) return;
 
-      const finalizarOperacion = async () => {
-        const batch = db.batch();
-        batch.set(db.collection('tickets').doc(), {
-          vendedor: user.nombre, items: cart, total: totalFinal, descuento: discountPct, cortado: false, tipo: tipoVenta,
-          hora: new Date().toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'}), timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        cart.forEach(i => batch.update(db.collection('productos').doc(i.id), { stock: firebase.firestore.FieldValue.increment(tipoVenta === 'Devolución' ? i.qty : -i.qty) }));
-        await batch.commit();
-        setCart([]); setDiscountPct(0); setShowCart(false); setPagoCon(''); setTipoVenta('Venta'); setSearchTerm('');
-      };
+                db.collection('productos').add({
+                    nombre: n.toUpperCase(), subcategoria: sub.toUpperCase(),
+                    precio: Number(p), stock: Number(s), categoria: catActiva.toUpperCase()
+                });
+            };
 
-      const hacerCorteCaja = async () => {
-        if(!confirm(`¿Cerrar caja y archivar por $${totalCajaActual}?`)) return;
-        const resP = {}, resV = {}, resH = {};
-        tickets.filter(t=>t.tipo==='Venta').forEach(t => {
-          resV[t.vendedor] = (resV[t.vendedor] || 0) + t.total;
-          const h = t.hora.split(':')[0] + ':00'; resH[h] = (resH[h] || 0) + t.total;
-          t.items.forEach(i => resP[i.nombre] = (resP[i.nombre] || 0) + i.qty);
-        });
-        const batch = db.batch(), corteRef = db.collection('cortes').doc(); 
-        batch.set(corteRef, { total: totalCajaActual, responsable: user.nombre, fecha: new Date().toLocaleDateString('es-MX'), hora: new Date().toLocaleTimeString('es-MX'), detalle_productos: resP, detalle_vendedores: resV, detalle_horas: resH, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
-        tickets.forEach(t => batch.update(db.collection('tickets').doc(t.id), {cortado: true, corteId: corteRef.id}));
-        await batch.commit();
-      };
-
-      const escucharVoz = () => {
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) return alert("Voz no soportada aquí.");
-        const rec = new SR(); rec.lang = 'es-MX'; rec.continuous = false;
-        rec.onstart = () => setIsListening(true);
-        rec.onresult = (e) => {
-          const text = e.results[0][0].transcript.toLowerCase(); let f = false;
-          products.forEach(p => { if (text.includes(p.nombre.toLowerCase())) { agregarAlCarrito(p); f = true; }});
-          if (!f) alert(`Escuché: "${text}", pero no encontré el sabor.`);
-        };
-        rec.onerror = (e) => { alert("Error: " + e.error); setIsListening(false); };
-        rec.onend = () => setIsListening(false); rec.start();
-      };
-
-      const handleUpdateProduct = (id, field, value) => {
-        let v = value;
-        if (['nombre','categoria','subcategoria'].includes(field)) v = v.trim().toUpperCase();
-        if (['stock','precio'].includes(field)) v = Number(v);
-        db.collection('productos').doc(id).update({ [field]: v });
-      };
-      
-      const handleAddProduct = () => {
-        const n = prompt("Sabor:"); if(!n) return;
-        const sub = prompt("División (Opcional):") || '';
-        const p = prompt("Precio $:"); if(!p) return;
-        const s = prompt("Stock inicial:"); if(!s) return;
-        db.collection('productos').add({nombre: n.toUpperCase(), subcategoria: sub.toUpperCase(), precio: Number(p), stock: Number(s), categoria: catActiva.toUpperCase()});
-      };
-
-      if (needConfig) return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
-          <div className="bg-white p-8 rounded-[35px] shadow-xl w-full max-w-md text-center">
-            <h1 className="text-3xl font-black text-pink-600 mb-2 italic uppercase">Conexión</h1>
-            <textarea id="fb-config-input" className="w-full h-40 p-4 bg-slate-50 rounded-2xl border-2 border-slate-200 outline-none font-mono text-[10px] mb-4" placeholder={'{\n  "apiKey": "..."\n}'}></textarea>
-            <button onClick={handleSaveConfig} className="w-full py-4 bg-pink-600 text-white font-black rounded-2xl uppercase shadow-md">Conectar 🚀</button>
-          </div>
-        </div>
-      );
-
-      if (view === 'login') return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
-          <h1 className="text-6xl font-black text-pink-600 mb-10 italic uppercase drop-shadow-md text-center leading-none">Michoacana</h1>
-          <div className="grid grid-cols-2 gap-4 w-full max-w-md">
-            {employees.map(e => (
-              <button key={e.id} onClick={() => {
-                const p = prompt(`PIN para ${e.nombre}:`);
-                if(p === e.pin) { setUser(e); setView('pos'); localStorage.setItem('michoacana_user', JSON.stringify(e)); localStorage.setItem('michoacana_user_time', Date.now().toString()); } 
-                else if(p !== null) alert("PIN incorrecto");
-              }} className="bg-white p-6 rounded-[35px] shadow-lg font-black uppercase text-gray-700 active:scale-95 transition-all">
-                {e.nombre}<p className="text-[10px] text-pink-500 font-bold mt-1">{e.rol}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      );
-
-      const visibleCategories = categories.filter(c => !(c.toUpperCase().includes('ADMIN') && user?.rol !== 'admin'));
-      const displayedProducts = products.filter(p => !(p.categoria.toUpperCase().includes('ADMIN') && user?.rol !== 'admin') && (searchTerm ? p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) : p.categoria.toUpperCase() === catActiva.toUpperCase()));
-
-      const renderDetalleCorte = () => (
-        <div className="bg-white p-6 rounded-[35px] shadow-sm">
-          <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl active:scale-95 transition-transform">← Volver</button>
-          <h2 className="font-black uppercase text-slate-800 text-xl mb-1">Detalle del Día</h2>
-          <p className="text-xs text-slate-400 font-bold mb-6 uppercase">{selectedCorte.fecha} - Resp: {selectedCorte.responsable}</p>
-          <div className="mb-8 p-5 bg-pink-50 rounded-[25px] border border-pink-100 shadow-inner">
-            <h3 className="font-black uppercase text-pink-600 text-[10px] tracking-widest mb-3 border-b border-pink-200 pb-2">📦 Resumen</h3>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-              {(() => {
-                const res = {};
-                if (selectedCorte.detalle_productos && Object.keys(selectedCorte.detalle_productos).length>0) Object.assign(res, selectedCorte.detalle_productos);
-                else corteTickets.filter(t=>t.tipo==='Venta').forEach(t => t.items.forEach(i => res[i.nombre] = (res[i.nombre]||0)+i.qty));
-                const sorted = Object.entries(res).sort((a,b)=>b[1]-a[1]);
-                if(sorted.length===0) return <p className="text-[10px] text-slate-400 italic col-span-2">Sin productos.</p>;
-                return sorted.map(([n, q]) => (
-                  <div key={n} className="flex justify-between items-center text-[10px] font-black uppercase border-b border-pink-200/50 pb-1">
-                    <span className="text-slate-600 truncate pr-2">{n}</span><span className="text-pink-500 bg-white px-2 py-0.5 rounded-md shadow-sm">{q}x</span>
-                  </div>
-                ));
-              })()}
-            </div>
-          </div>
-          <h3 className="font-black uppercase text-slate-400 text-[10px] tracking-widest mb-3">🧾 Movimientos</h3>
-          <div className="space-y-3">
-            {corteTickets.length===0 ? <p className="text-center text-slate-400 italic">Cargando...</p> : 
-              corteTickets.map(t => (
-              <div key={t.id} className={`p-4 rounded-[20px] border-r-4 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500 bg-slate-50':t.tipo==='Devolución'?'border-orange-500 bg-orange-50':'border-red-400 bg-red-50'}`}>
-                <div className="flex justify-between items-start border-b border-slate-200/50 pb-2 mb-2">
-                  <div className="flex items-center gap-2"><span className="font-black text-[11px] uppercase">{t.hora}</span><span className="text-[9px] bg-white border px-2 py-0.5 rounded-md text-slate-500 font-bold uppercase">{t.vendedor}</span>{t.tipo!=='Venta'&&<span className="text-[8px] px-2 py-0.5 rounded-lg text-slate-600 font-black uppercase border">{t.tipo}</span>}</div>
-                  <div className="text-right leading-none"><p className={`text-xl font-black ${t.tipo==='Devolución'?'text-orange-500':''}`}>{t.tipo==='Devolución'?`-$${t.total}`:`$${t.total}`}</p>{t.descuento>0&&<p className="text-[8px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}</div>
-                </div>
-                <div className="space-y-1">{t.items.map(i => (<div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase"><span>{i.qty}x {i.nombre}</span><span>${i.precio} c/u</span></div>))}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-
-      return (
-        <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl relative overflow-hidden">
-          <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30 shadow-md">
-            <span className="font-black italic uppercase text-xl">Michoacana Pro</span>
-            <div className="flex gap-4 items-center">
-              <button onClick={()=>{setView('pos');setSelectedCorte(null);}} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
-              {(user.rol==='admin'||user.rol==='encargado') && <button onClick={()=>{setView('dashboard');setSelectedCorte(null);}} className={`text-2xl ${view==='dashboard'?'scale-125':''}`}>📈</button>}
-              {(user.rol==='admin'||user.rol==='encargado') && <button onClick={()=>{setView('history');setSelectedCorte(null);}} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
-              {user.rol==='admin' && <button onClick={()=>{setView('admin');setSelectedCorte(null);}} className={`text-2xl ${view==='admin'?'scale-125':''}`}>📦</button>}
-              <button onClick={()=>{setUser(null);setView('login');setSelectedCorte(null);localStorage.removeItem('michoacana_user');localStorage.removeItem('michoacana_user_time');}} className="bg-pink-900 px-4 py-2 rounded-full text-[10px] font-black uppercase ml-2 shadow-sm">Salir</button>
-            </div>
-          </nav>
-
-          {view === 'pos' && (
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <div className="bg-slate-50 p-3 border-b flex gap-2">
-                <div className="relative flex-1"><span className="absolute inset-y-0 left-0 flex items-center pl-4 text-xl">🔍</span><input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border-2 border-transparent focus:border-pink-300 outline-none font-black text-slate-700 shadow-sm" /></div>
-                <button onClick={escucharVoz} className={`w-14 h-14 flex items-center justify-center rounded-2xl text-2xl shadow-sm ${isListening?'animate-listening text-white':'bg-white border text-blue-500'}`}>🎤</button>
-              </div>
-              <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
-                {visibleCategories.map(cat => (
-                  <button key={cat} onClick={()=>{setCatActiva(cat);setSearchTerm('');}} className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap transition-all ${catActiva.toUpperCase()===cat.toUpperCase()&&!searchTerm?'bg-pink-600 text-white shadow-md':'bg-white text-gray-400'}`}>{cat}</button>
-                ))}
-              </div>
-              <div className="flex-1 p-4 overflow-y-auto bg-slate-50 pb-28 scroll-hide">
-                {searchTerm ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {displayedProducts.map(p => (
-                      <button key={p.id} disabled={p.stock<=0} onClick={()=>agregarAlCarrito(p)} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all flex flex-col justify-between">
-                        <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p><p className="text-pink-600 font-black text-2xl">${p.precio}</p><span className="text-[8px] font-bold text-slate-400 uppercase mt-1">{p.categoria} {p.subcategoria?`- ${p.subcategoria}`:''}</span><div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock<=10?'animate-alert text-white':'bg-pink-50 text-pink-400'}`}>Stock: {p.stock}</div>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  Array.from(new Set(displayedProducts.map(p=>(p.subcategoria||'').trim().toUpperCase()||'GENERAL'))).sort().map(subcat => (
-                    <div key={subcat} className="mb-6 w-full">
-                      {subcat!=='GENERAL' && <h3 className="font-black text-slate-400 uppercase text-[10px] mb-3 tracking-widest pl-2 border-b-2 border-slate-200 pb-1">{subcat}</h3>}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {displayedProducts.filter(p=>((p.subcategoria||'').trim().toUpperCase()||'GENERAL')===subcat).map(p => (
-                          <button key={p.id} disabled={p.stock<=0} onClick={()=>agregarAlCarrito(p)} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all flex flex-col justify-between">
-                            <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p><p className="text-pink-600 font-black text-2xl">${p.precio}</p><div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock<=10?'animate-alert text-white':'bg-pink-50 text-pink-400'}`}>Stock: {p.stock}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.25)] z-40 flex flex-col max-h-[85vh] ${!showCart?'cart-hidden':''}`}>
-                <button onClick={()=>setShowCart(!showCart)} className="w-full py-4 flex flex-col items-center"><div className="w-14 h-1.5 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">PEDIDO ({cart.length})</span></button>
-                <div className="p-5 overflow-y-auto flex-1">
-                  {cart.map(item => (
-                    <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                      <div className="flex-1 pr-2">
-                        <p className="font-black text-xs uppercase text-slate-700 leading-tight">{item.nombre}</p>
-                        {user.rol==='admin' ? (<div className="flex items-center gap-1 mt-1"><span className="text-pink-500 font-bold text-xs">$</span><input type="number" className="w-12 border-b-2 border-pink-200 outline-none text-pink-500 font-black text-sm bg-transparent focus:border-pink-500" value={item.precio} onChange={(e)=>setCart(prev=>prev.map(i=>i.id===item.id?{...i,precio:Number(e.target.value)}:i))} /><span className="text-pink-500 font-bold text-[10px]">c/u</span></div>) : (<p className="text-pink-500 font-bold text-[10px] mt-1">${item.precio} c/u</p>)}
-                      </div>
-                      <div className="flex items-center gap-4 bg-white px-3 py-1.5 rounded-2xl border shadow-sm">
-                        <button onClick={()=>setCart(prev=>prev.map(i=>i.id===item.id?{...i,qty:Math.max(1,i.qty-1)}:i))} className="font-black text-red-400 text-xl">-</button><span className="font-black text-md">{item.qty}</span><button onClick={()=>setCart(prev=>prev.map(i=>i.id===item.id?{...i,qty:i.qty+1}:i))} className="font-black text-green-400 text-xl">+</button>
-                      </div>
-                      <button onClick={()=>setCart(prev=>prev.filter(i=>i.id!==item.id))} className="ml-4 text-red-200 text-xl">✕</button>
-                    </div>
-                  ))}
-                  <div className="mt-4 p-5 bg-slate-100 rounded-[35px] space-y-4">
-                    <div className="flex justify-between items-center">
-                      <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2.5 rounded-2xl font-black text-[11px] uppercase text-pink-600 border shadow-sm outline-none">
-                        <option value="Venta">💰 Normal</option><option value="Devolución">🔄 Cambio</option>
-                        {(user.rol==='admin'||user.rol==='encargado')&&<option value="Merma">🚫 Merma</option>}
-                        {(user.rol==='admin'||user.rol==='encargado')&&<option value="Consumo">🍦 Consumo</option>}
-                      </select>
-                      {tipoVenta==='Venta'&&user.rol==='admin' && (
-                        <div className="flex gap-1.5">{[0,10,30].map(pct=><button key={pct} onClick={()=>setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[11px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>)}</div>
-                      )}
-                    </div>
-                    <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3 px-2">
-                      <div className="flex flex-col"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{tipoVenta==='Venta'?'A Pagar':'Valor'}</span><span className={`text-6xl font-black tracking-tighter ${tipoVenta==='Devolución'?'text-orange-500':'text-slate-800'}`}>${totalFinal}</span></div>
-                      {tipoVenta!=='Venta'&&<span className="text-[10px] font-black text-white px-3 py-1 rounded-full uppercase mb-2 bg-orange-500">{tipoVenta}</span>}
-                    </div>
-                    {tipoVenta==='Venta' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Recibido:</label><input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none" /></div>
-                        <div className="flex flex-col"><label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Cambio:</label><div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm ${cambio<0?'bg-red-50 text-red-400':'bg-green-50 text-green-600'}`}>${cambio>=0?cambio:'-'}</div></div>
-                      </div>
-                    )}
-                    <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl active:scale-95">COBRAR ✅</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {view === 'dashboard' && (
-            <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
-              <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
-                <div className="flex flex-col mb-4">
-                  <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
-                  <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
-                    {['mes','dia','producto','vendedor','hora'].map(t=>(<button key={t} onClick={()=>setTipoGrafica(t)} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase transition-all ${tipoGrafica===t?'bg-pink-500 text-white':'bg-slate-50 text-slate-400'}`}>{t}</button>))}
-                  </div>
-                </div>
-                <div className="h-64 w-full relative"><canvas ref={chartRef}></canvas></div>
-              </div>
-            </div>
-          )}
-
-          {view === 'admin' && (
-            <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
-              <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
-                <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ CATEGORÍAS</h2>
-                <div className="flex flex-col gap-3">
-                  {categories.map((cat, idx) => (
-                    <div key={idx} className="bg-white px-4 py-3 rounded-2xl flex justify-between items-center border shadow-sm">
-                      <span className="font-black text-lg uppercase text-slate-800">{cat}</span>
-                      <div className="flex gap-2">
-                        <button onClick={()=>{const n=prompt("Nombre:",cat);if(n){const c=[...categories];c[idx]=n.trim().toUpperCase();setCategories(c);db.collection('config').doc('categorias').set({lista:c});}}} className="text-white font-black text-xs bg-blue-500 px-4 py-2 rounded-xl uppercase">Edit</button>
-                        <button onClick={()=>{if(confirm("¿Borrar?")) {const c=categories.filter(i=>i!==cat);setCategories(c);db.collection('config').doc('categorias').set({lista:c});}}} className="text-white font-black text-xs bg-red-500 px-4 py-2 rounded-xl uppercase">Borrar</button>
-                      </div>
-                    </div>
-                  ))}
-                  <button onClick={()=>{const n=prompt("NUEVA categoría:");if(n){const c=[...categories,n.trim().toUpperCase()];setCategories(c);db.collection('config').doc('categorias').set({lista:c});}}} className="bg-pink-600 text-white px-6 py-4 mt-2 rounded-2xl font-black text-sm uppercase">+ Añadir</button>
-                </div>
-              </div>
-              {orphanedProducts.length > 0 && (
-                <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
-                  <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ HUÉRFANOS</h2>
-                  {orphanedProducts.map(p => (
-                    <div key={p.id} className="p-4 bg-white rounded-2xl border border-red-200 mb-2 flex flex-col gap-2">
-                      <p className="font-black text-sm uppercase text-slate-800">{p.nombre}</p>
-                      <select className="border-2 border-blue-200 p-2 rounded-xl text-xs font-black uppercase text-blue-600 bg-blue-50" value="" onChange={(x)=>handleUpdateProduct(p.id,'categoria',x.target.value)}><option value="" disabled>Elegir...</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal</h2>
-                {employees.map(e => (
-                  <div key={e.id} className="flex flex-col sm:flex-row justify-between p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
-                    <input className="font-black uppercase text-sm bg-transparent outline-none border-b focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
-                    <div className="flex items-center gap-3">
-                      <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border"><option value="admin">Admin</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option></select>
-                      <input className="w-12 p-2 text-center font-black text-xs outline-none bg-white border rounded-xl" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
-                      <button onClick={()=>confirm("¿Borrar?")&&db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg">✕</button>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={()=>{const n=prompt("Nombre:");const p=prompt("PIN:");if(n&&p)db.collection('empleados').add({nombre:n.toUpperCase(),pin:p,rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Empleado</button>
-              </div>
-              <div className="bg-white p-6 rounded-[35px] shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
-                  <div className="flex gap-1 overflow-x-auto scroll-hide">{visibleCategories.map(c => (<button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva.toUpperCase()===c.toUpperCase()?'bg-pink-500 text-white':'bg-slate-50 text-slate-400'}`}>{c}</button>))}</div>
-                </div>
-                {products.filter(p=>p.categoria.toUpperCase()===catActiva.toUpperCase()).map(p => (
-                  <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
-                    <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id,'nombre',x.target.value)} />
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      <select className="font-black uppercase text-[10px] bg-transparent border-b outline-none text-blue-500 py-1" value={p.categoria} onChange={(x)=>handleUpdateProduct(p.id,'categoria',x.target.value)}>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                      <input className="font-black uppercase text-[10px] bg-transparent border-b outline-none text-blue-500 py-1" defaultValue={p.subcategoria||''} onBlur={(x)=>handleUpdateProduct(p.id,'subcategoria',x.target.value)} placeholder="Subcategoria..." />
-                    </div>
-                    <div className="flex justify-between items-center mt-2">
-                      <div className="flex gap-3">
-                        <input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id,'stock',x.target.value)} />
-                        <input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id,'precio',x.target.value)} />
-                      </div>
-                      <button onClick={()=>confirm("¿Borrar permanentemente?")&&db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl">✕</button>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={handleAddProduct} className="w-full py-4 bg-pink-50 border-2 border-dashed text-pink-600 rounded-2xl font-black text-[10px] uppercase">+ Añadir Sabor</button>
-              </div>
-            </div>
-          )}
-
-          {view === 'history' && (
-            <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
-              {selectedCorte ? renderDetalleCorte() : (
-                <>
-                  <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
-                    <p className="text-[10px] font-black opacity-70 uppercase mb-2">Caja Actual</p>
-                    <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
-                    <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95">Realizar Corte 💰</button>
-                  </div>
-                  <div className="mb-8">
-                    <h2 className="font-black uppercase text-pink-600 mb-3 text-sm">🧾 Ventas del Día</h2>
-                    <div className="space-y-3">
-                      {tickets.length===0 ? <p className="text-center text-slate-400 italic text-sm mt-4">Aún no hay ventas.</p> : 
-                        tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
-                        <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500':t.tipo==='Devolución'?'border-orange-500':'border-red-400'}`}>
-                          <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
-                            <div className="flex items-center gap-2"><span className="font-black text-[12px] uppercase">{t.hora}</span><span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span>{t.tipo!=='Venta'&&<span className="text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase bg-orange-500">{t.tipo}</span>}</div>
-                            <div className="text-right leading-none"><p className={`text-2xl font-black ${t.tipo==='Devolución'?'text-orange-500':''}`}>{t.tipo==='Devolución'?`-$${t.total}`:`$${t.total}`}</p>{t.descuento>0&&<p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}</div>
-                          </div>
-                          <div className="space-y-1">{t.items.map(i => (<div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase"><span>{i.qty}x {i.nombre}</span><span>${i.precio} c/u</span></div>))}</div>
+            if (needConfig) {
+                return (
+                    <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
+                        <div className="bg-white p-8 rounded-[35px] shadow-xl w-full max-w-md text-center">
+                            <h1 className="text-3xl font-black text-pink-600 mb-2 italic uppercase">Conexión</h1>
+                            <textarea id="fb-config-input" className="w-full h-40 p-4 bg-slate-50 rounded-2xl border-2 border-slate-200 outline-none font-mono text-[10px] mb-4" placeholder={'{\n  "apiKey": "..."\n}'}></textarea>
+                            <button onClick={handleSaveConfig} className="w-full py-4 bg-pink-600 text-white font-black rounded-2xl uppercase shadow-md">Conectar 🚀</button>
                         </div>
-                      ))}
                     </div>
-                  </div>
-                  <h2 className="font-black uppercase text-pink-600 mb-4 text-sm border-t-2 border-slate-200 pt-6">📑 Auditoría</h2>
-                  {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
-                    const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
-                    return (
-                      <div key={mes} className="mb-6 bg-white p-6 rounded-[35px] shadow-sm">
-                        <div className="flex justify-between items-end border-b-2 border-slate-100 pb-2 mb-4"><h3 className="font-black text-slate-400 uppercase text-[12px]">{mes}</h3><span className="font-black text-pink-600 text-sm uppercase bg-pink-50 px-3 py-1 rounded-lg">Total: ${totalMes}</span></div>
-                        {cortesDelMes.map(c => (
-                          <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
-                            <div className="flex justify-between items-start mb-2"><div><p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p><p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p></div><p className="text-xl font-black text-green-600">${c.total}</p></div>
-                            <button onClick={()=>setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1">Detalle 🔍</button>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    };
+                );
+            }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
+            if (view === 'login') return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-pink-100 p-6">
+                    <h1 className="text-6xl font-black text-pink-600 mb-10 italic uppercase drop-shadow-md text-center leading-none">Michoacana</h1>
+                    <div className="grid grid-cols-2 gap-4 w-full max-w-md">
+                        {employees.map(e => (
+                            <button key={e.id} onClick={() => {
+                                const p = prompt(`PIN para ${e.nombre}:`);
+                                if(p === e.pin) { 
+                                    setUser(e); 
+                                    setView('pos'); 
+                                    localStorage.setItem('michoacana_user', JSON.stringify(e));
+                                    localStorage.setItem('michoacana_user_time', Date.now().toString());
+                                } else if(p !== null) {
+                                    alert("PIN incorrecto");
+                                }
+                            }} className="bg-white p-6 rounded-[35px] shadow-lg font-black uppercase text-gray-700 active:scale-95 transition-all">
+                                {e.nombre}<p className="text-[10px] text-pink-500 font-bold mt-1">{e.rol}</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            const visibleCategories = categories.filter(c => {
+                if (c.toUpperCase().includes('ADMIN') && user?.rol !== 'admin') return false;
+                return true;
+            });
+
+            const displayedProducts = products.filter(p => {
+                if (p.categoria.toUpperCase().includes('ADMIN') && user?.rol !== 'admin') return false;
+                if (searchTerm) return p.nombre.toLowerCase().includes(searchTerm.toLowerCase());
+                return p.categoria.toUpperCase() === catActiva.toUpperCase();
+            });
+
+            const renderDetalleCorte = () => (
+                <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                    <button onClick={() => setSelectedCorte(null)} className="text-pink-600 font-black uppercase text-xs mb-4 flex items-center gap-2 bg-pink-50 px-3 py-2 rounded-xl active:scale-95 transition-transform">← Volver a Cortes</button>
+                    <h2 className="font-black uppercase text-slate-800 text-xl mb-1">Detalle del Día</h2>
+                    <p className="text-xs text-slate-400 font-bold mb-6 uppercase">{selectedCorte.fecha} - Responsable: {selectedCorte.responsable}</p>
+                    
+                    <div className="mb-8 p-5 bg-pink-50 rounded-[25px] border border-pink-100 shadow-inner">
+                        <h3 className="font-black uppercase text-pink-600 text-[10px] tracking-widest mb-3 border-b border-pink-200 pb-2">📦 Resumen de Productos Vendidos</h3>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                            {(() => {
+                                const resumen = {};
+                                if (selectedCorte.detalle_productos && Object.keys(selectedCorte.detalle_productos).length > 0) {
+                                    Object.assign(resumen, selectedCorte.detalle_productos);
+                                } else {
+                                    corteTickets.filter(t => t.tipo === 'Venta').forEach(t => {
+                                        t.items.forEach(i => resumen[i.nombre] = (resumen[i.nombre] || 0) + i.qty);
+                                    });
+                                }
+                                const sorted = Object.entries(resumen).sort((a,b)=>b[1]-a[1]);
+                                if(sorted.length === 0) return <p className="text-[10px] text-slate-400 italic col-span-2">No hay productos vendidos en este corte.</p>;
+                                return sorted.map(([nombre, qty]) => (
+                                    <div key={nombre} className="flex justify-between items-center text-[10px] font-black uppercase border-b border-pink-200/50 pb-1">
+                                        <span className="text-slate-600 truncate pr-2">{nombre}</span>
+                                        <span className="text-pink-500 bg-white px-2 py-0.5 rounded-md shadow-sm">{qty}x</span>
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    </div>
+
+                    <h3 className="font-black uppercase text-slate-400 text-[10px] tracking-widest mb-3">🧾 Movimientos Exactos</h3>
+                    <div className="space-y-3">
+                        {corteTickets.length === 0 ? <p className="text-center text-slate-400 italic">Cargando movimientos...</p> : 
+                         corteTickets.map(t => (
+                            <div key={t.id} className={`p-4 rounded-[20px] border-r-4 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500 bg-slate-50':t.tipo==='Devolución'?'border-orange-500 bg-orange-50':t.tipo==='Merma'?'border-red-400 bg-red-50':'border-blue-400 bg-blue-50'}`}>
+                                <div className="flex justify-between items-start border-b border-slate-200/50 pb-2 mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-black text-[11px] uppercase">{t.hora}</span>
+                                        <span className="text-[9px] bg-white border px-2 py-0.5 rounded-md text-slate-500 font-bold uppercase">{t.vendedor}</span>
+                                        {t.tipo !== 'Venta' && <span className="text-[8px] px-2 py-0.5 rounded-lg text-slate-600 font-black uppercase border">{t.tipo}</span>}
+                                    </div>
+                                    <div className="text-right leading-none">
+                                        <p className={`text-xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
+                                        {t.descuento > 0 && <p className="text-[8px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    {t.items.map(i => (
+                                        <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
+                                            <span>{i.qty}x {i.nombre}</span>
+                                            <span>${i.precio} c/u</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex flex-col h-screen max-w-5xl mx-auto bg-white shadow-2xl relative overflow-hidden">
+                    <nav className="bg-pink-600 p-4 text-white flex justify-between items-center z-30 shadow-md">
+                        <span className="font-black italic uppercase text-xl">Michoacana Pro</span>
+                        <div className="flex gap-4 items-center">
+                            <button onClick={() => {setView('pos'); setSelectedCorte(null);}} className={`text-2xl ${view==='pos'?'scale-125':''}`}>🛒</button>
+                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('dashboard'); setSelectedCorte(null);}} className={`text-2xl ${view==='dashboard'?'scale-125':''}`}>📈</button>}
+                            {(user.rol === 'admin' || user.rol === 'encargado') && <button onClick={() => {setView('history'); setSelectedCorte(null);}} className={`text-2xl ${view==='history'?'scale-125':''}`}>📊</button>}
+                            {user.rol === 'admin' && <button onClick={() => setView('admin')} className={`text-2xl ${view==='admin'?'scale-125':''}`}>📦</button>}
+                            <button onClick={() => {
+                                setUser(null); 
+                                setView('login'); 
+                                setSelectedCorte(null);
+                                localStorage.removeItem('michoacana_user');
+                                localStorage.removeItem('michoacana_user_time');
+                            }} className="bg-pink-900 px-4 py-2 rounded-full text-[10px] font-black uppercase ml-2 shadow-sm">Salir</button>
+                        </div>
+                    </nav>
+
+                    {view === 'pos' && (
+                        <div className="flex flex-col flex-1 overflow-hidden">
+                            <div className="bg-slate-50 p-3 border-b flex gap-2">
+                                <div className="relative flex-1">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-xl">🔍</span>
+                                    <input type="text" placeholder="Buscar sabor rápido..." value={searchTerm} onChange={(e)=>setSearchTerm(e.target.value)} 
+                                    className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white border-2 border-transparent focus:border-pink-300 outline-none font-black text-slate-700 shadow-sm" />
+                                </div>
+                                <button onClick={escucharVoz} className={`w-14 h-14 flex items-center justify-center rounded-2xl text-2xl shadow-sm ${isListening ? 'animate-listening text-white' : 'bg-white border text-blue-500'}`}>🎤</button>
+                            </div>
+                            <div className="bg-slate-100 flex p-2 gap-2 border-b overflow-x-auto scroll-hide">
+                                {visibleCategories.map(cat => (
+                                    <button key={cat} onClick={() => { setCatActiva(cat); setSearchTerm(''); }} 
+                                    className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase whitespace-nowrap transition-all ${catActiva.toUpperCase() === cat.toUpperCase() && !searchTerm ? 'bg-pink-600 text-white shadow-md' : 'bg-white text-gray-400'}`}>
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="flex-1 p-4 overflow-y-auto bg-slate-50 pb-28 scroll-hide">
+                                {searchTerm ? (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                        {displayedProducts.map(p => (
+                                            <button key={p.id} disabled={p.stock <= 0} onClick={() => agregarAlCarrito(p)} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all hover:shadow-md flex flex-col justify-between">
+                                                <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p>
+                                                <p className="text-pink-600 font-black text-2xl">${p.precio}</p>
+                                                <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">{p.categoria} {p.subcategoria ? `- ${p.subcategoria}` : ''}</span>
+                                                <div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock <= 10 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-400'}`}>Stock: {p.stock}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    Array.from(new Set(displayedProducts.map(p => (p.subcategoria || '').trim().toUpperCase() || 'GENERAL'))).sort().map(subcat => (
+                                        <div key={subcat} className="mb-6 w-full">
+                                            {subcat !== 'GENERAL' && <h3 className="font-black text-slate-400 uppercase text-[10px] mb-3 tracking-widest pl-2 border-b-2 border-slate-200 pb-1">{subcat}</h3>}
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                {displayedProducts.filter(p => ((p.subcategoria || '').trim().toUpperCase() || 'GENERAL') === subcat).map(p => (
+                                                    <button key={p.id} disabled={p.stock <= 0} onClick={() => agregarAlCarrito(p)} className="p-4 rounded-[25px] shadow-sm bg-white relative text-left border-4 border-transparent active:border-pink-500 transition-all hover:shadow-md flex flex-col justify-between">
+                                                        <p className="font-black text-gray-900 uppercase text-xs leading-tight mb-1">{p.nombre}</p>
+                                                        <p className="text-pink-600 font-black text-2xl">${p.precio}</p>
+                                                        <div className={`absolute top-2 right-2 px-2 py-0.5 rounded-full text-[8px] font-black ${p.stock <= 10 ? 'animate-alert text-white' : 'bg-pink-50 text-pink-400'}`}>Stock: {p.stock}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                                {displayedProducts.length === 0 && <p className="text-center text-slate-400 font-black mt-10 uppercase text-sm">No se encontraron productos 😢</p>}
+                            </div>
+
+                            <div className={`cart-panel fixed bottom-0 left-0 right-0 bg-white shadow-[0_-15px_50px_rgba(0,0,0,0.25)] z-40 flex flex-col max-h-[85vh] ${!showCart ? 'cart-hidden' : ''}`}>
+                                <button onClick={() => setShowCart(!showCart)} className="w-full py-4 flex flex-col items-center"><div className="w-14 h-1.5 bg-slate-200 rounded-full mb-1"></div><span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">RESUMEN DEL PEDIDO ({cart.length})</span></button>
+                                <div className="p-5 overflow-y-auto flex-1">
+                                    {cart.map(item => (
+                                        <div key={item.id} className="flex justify-between items-center mb-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                                            <div className="flex-1 pr-2">
+                                                <p className="font-black text-xs uppercase text-slate-700 leading-tight">{item.nombre}</p>
+                                                {user.rol === 'admin' ? (
+                                                    <div className="flex items-center gap-1 mt-1">
+                                                        <span className="text-pink-500 font-bold text-xs">$</span>
+                                                        <input type="number" className="w-12 border-b-2 border-pink-200 outline-none text-pink-500 font-black text-sm bg-transparent focus:border-pink-500" value={item.precio} onChange={(e) => {
+                                                            const newPrice = Number(e.target.value);
+                                                            setCart(prev => prev.map(i => i.id === item.id ? {...i, precio: newPrice} : i));
+                                                        }} />
+                                                        <span className="text-pink-500 font-bold text-[10px]">c/u (Cambiar)</span>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-pink-500 font-bold text-[10px] mt-1">${item.precio} c/u</p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-4 bg-white px-3 py-1.5 rounded-2xl border shadow-sm">
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: Math.max(1, i.qty-1)} : i))} className="font-black text-red-400 text-xl">-</button>
+                                                <span className="font-black text-md">{item.qty}</span>
+                                                <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, qty: i.qty+1} : i))} className="font-black text-green-400 text-xl">+</button>
+                                            </div>
+                                            <button onClick={() => setCart(prev => prev.filter(i => i.id !== item.id))} className="ml-4 text-red-200 text-xl">✕</button>
+                                        </div>
+                                    ))}
+                                    
+                                    <div className="mt-4 p-5 bg-slate-100 rounded-[35px] space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <select value={tipoVenta} onChange={(e)=>setTipoVenta(e.target.value)} className="bg-white px-3 py-2.5 rounded-2xl font-black text-[11px] uppercase text-pink-600 border shadow-sm outline-none">
+                                                <option value="Venta">💰 Venta Normal</option>
+                                                <option value="Devolución">🔄 Devolución/Cambio</option>
+                                                {(user.rol === 'admin' || user.rol === 'encargado') && <option value="Merma">🚫 Merma/Dañado</option>}
+                                                {(user.rol === 'admin' || user.rol === 'encargado') && <option value="Consumo">🍦 Consumo Propio</option>}
+                                            </select>
+                                            
+                                            {tipoVenta === 'Venta' && user.rol === 'admin' && (
+                                                <div className="flex gap-1.5">
+                                                    {[0, 10, 30].map(pct => (
+                                                        <button key={pct} onClick={() => setDiscountPct(pct)} className={`px-4 py-2 rounded-xl font-black text-[11px] border transition-all ${discountPct===pct?'bg-pink-600 text-white shadow-md':'bg-white text-slate-400'}`}>{pct}%</button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex justify-between items-end border-b-2 border-slate-200 pb-3 px-2">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                                    {tipoVenta === 'Venta' ? 'Total a Pagar' : tipoVenta === 'Devolución' ? 'Dinero a Devolver' : 'Valor Producto'}
+                                                </span>
+                                                <span className={`text-6xl font-black tracking-tighter ${tipoVenta === 'Devolución' ? 'text-orange-500' : 'text-slate-800'}`}>${totalFinal}</span>
+                                            </div>
+                                            {tipoVenta !== 'Venta' && <span className={`text-[10px] font-black text-white px-3 py-1 rounded-full uppercase mb-2 ${tipoVenta === 'Devolución' ? 'bg-orange-500' : 'bg-red-400'}`}>{tipoVenta}</span>}
+                                            {discountPct > 0 && <span className="text-[10px] font-black text-pink-500 uppercase bg-pink-50 px-2 py-1 rounded-lg mb-2">Ahorro: ${subtotal - totalFinal}</span>}
+                                        </div>
+
+                                        {tipoVenta === 'Venta' && (
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Efectivo recibido:</label>
+                                                    <input type="number" value={pagoCon} onChange={(e)=>setPagoCon(e.target.value)} placeholder="0" className="p-4 bg-white rounded-2xl font-black text-2xl text-slate-800 shadow-inner border-2 border-transparent focus:border-pink-300 outline-none transition-all" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase ml-2 mb-1">Dar Cambio:</label>
+                                                    <div className={`p-4 rounded-2xl font-black text-2xl flex items-center justify-center shadow-sm ${cambio < 0 ? 'bg-red-50 text-red-400' : 'bg-green-50 text-green-600'}`}>${cambio >= 0 ? cambio : '---'}</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <button onClick={finalizarOperacion} disabled={cart.length===0} className="w-full py-5 rounded-3xl bg-pink-600 text-white font-black text-2xl uppercase shadow-xl active:scale-95 transition-all">
+                                            {tipoVenta === 'Devolución' ? 'CONFIRMAR DEVOLUCIÓN 🔄' : 'FINALIZAR COBRO ✅'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'dashboard' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm mb-6">
+                                <div className="flex flex-col mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm mb-3">📈 Panel de Gráficas</h2>
+                                    <div className="flex gap-2 overflow-x-auto scroll-hide pb-2">
+                                        <button onClick={() => setTipoGrafica('mes')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='mes'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Meses</button>
+                                        <button onClick={() => setTipoGrafica('dia')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='dia'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Días</button>
+                                        <button onClick={() => setTipoGrafica('producto')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='producto'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Productos</button>
+                                        <button onClick={() => setTipoGrafica('vendedor')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='vendedor'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Vendedores</button>
+                                        <button onClick={() => setTipoGrafica('hora')} className={`px-4 py-2 rounded-xl font-black text-[9px] uppercase whitespace-nowrap transition-all ${tipoGrafica==='hora'?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>Horarios</button>
+                                    </div>
+                                </div>
+                                <div className="h-64 w-full relative">
+                                    <canvas ref={chartRef}></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'admin' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 space-y-8 pb-10 scroll-hide">
+                            <div className="bg-pink-100 p-6 rounded-[35px] border-4 border-pink-300 shadow-md">
+                                <h2 className="font-black uppercase text-pink-700 mb-2 text-xl">🗂️ GESTIÓN DE CATEGORÍAS</h2>
+                                <p className="text-xs text-pink-600 font-bold mb-4">Usa estos botones para agregar, editar o borrar tus apartados principales. Las que digan "ADMIN" al inicio serán invisibles para los empleados.</p>
+                                
+                                <div className="flex flex-col gap-3">
+                                    {categories.map((cat, idx) => (
+                                        <div key={idx} className="bg-white px-4 py-3 rounded-2xl flex justify-between items-center border shadow-sm">
+                                            <span className="font-black text-lg uppercase text-slate-800">{cat}</span>
+                                            <div className="flex gap-2">
+                                                <button onClick={()=>{const n = prompt("Corregir nombre de la categoría:", cat); if(n){ const c = [...categories]; c[idx] = n.trim().toUpperCase(); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-blue-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Editar</button>
+                                                <button onClick={()=>{if(confirm("¿Seguro que quieres BORRAR '"+cat+"'? Sus productos se irán a la zona roja de ocultos.")) { const c = categories.filter(i => i !== cat); setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="text-white font-black text-xs bg-red-500 px-4 py-2 rounded-xl uppercase active:scale-95 shadow-sm">Borrar</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button onClick={()=>{const n = prompt("Nombre de la NUEVA categoría:"); if(n){ const c = [...categories, n.trim().toUpperCase()]; setCategories(c); db.collection('config').doc('categorias').set({lista: c}); }}} className="bg-pink-600 text-white shadow-md px-6 py-4 mt-2 rounded-2xl font-black text-sm uppercase active:scale-95 transition-transform w-full">+ Añadir Nueva Categoría</button>
+                                </div>
+                            </div>
+
+                            {orphanedProducts.length > 0 && (
+                                <div className="bg-red-50 p-6 rounded-[35px] border-2 border-red-300">
+                                    <h2 className="font-black uppercase text-red-600 mb-2 text-lg">⚠️ PRODUCTOS HUÉRFANOS</h2>
+                                    <p className="text-xs text-red-500 mb-4 font-bold">Estos productos se quedaron sin categoría porque la borraste. Elige a dónde mandarlos:</p>
+                                    {orphanedProducts.map(p => (
+                                        <div key={p.id} className="p-4 bg-white rounded-2xl border border-red-200 mb-2 flex flex-col gap-2">
+                                            <p className="font-black text-sm uppercase text-slate-800">{p.nombre}</p>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold text-slate-500 uppercase">Mover a:</span>
+                                                <select 
+                                                    className="border-2 border-blue-200 p-2 rounded-xl text-xs font-black uppercase text-blue-600 outline-none w-full bg-blue-50"
+                                                    value="" 
+                                                    onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}
+                                                >
+                                                    <option value="" disabled>Selecciona una categoría...</option>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <h2 className="font-black uppercase text-pink-600 mb-4 text-sm">👥 Personal y Permisos</h2>
+                                {employees.map(e => (
+                                    <div key={e.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 rounded-2xl border mb-3 gap-3">
+                                        <input className="font-black uppercase text-sm bg-transparent outline-none focus:text-pink-500 flex-1 border-b border-transparent focus:border-pink-200" defaultValue={e.nombre} onBlur={(x)=>db.collection('empleados').doc(e.id).update({nombre: x.target.value.toUpperCase()})} />
+                                        <div className="flex items-center gap-3">
+                                            <select value={e.rol} onChange={(x)=>db.collection('empleados').doc(e.id).update({rol: x.target.value})} className="text-[10px] font-black uppercase p-2 rounded-xl bg-white border outline-none text-slate-500">
+                                                <option value="admin">Administrador</option><option value="encargado">Encargado</option><option value="vendedor">Vendedor</option>
+                                            </select>
+                                            <div className="flex items-center bg-white border rounded-xl px-2">
+                                                <span className="text-[8px] font-black text-slate-400">PIN</span>
+                                                <input className="w-12 p-2 text-center font-black text-xs outline-none bg-transparent" defaultValue={e.pin} onBlur={(x)=>db.collection('empleados').doc(e.id).update({pin: x.target.value})} />
+                                            </div>
+                                            <button onClick={() => confirm("¿Borrar empleado?") && db.collection('empleados').doc(e.id).delete()} className="text-red-300 font-black text-lg hover:text-red-500">✕</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={()=>{const n=prompt("Nombre:"); const p=prompt("PIN numérico:"); if(n&&p) db.collection('empleados').add({nombre:n.toUpperCase(), pin:p, rol:'vendedor'})}} className="w-full py-3 mt-2 border-2 border-dashed border-pink-200 text-pink-500 rounded-xl font-black text-[10px] uppercase">+ Nuevo Empleado</button>
+                            </div>
+
+                            <div className="bg-white p-6 rounded-[35px] shadow-sm">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="font-black uppercase text-pink-600 text-sm">🍦 Inventario ({catActiva})</h2>
+                                    <div className="flex gap-1 overflow-x-auto scroll-hide">
+                                        {visibleCategories.map(c => (
+                                            <button key={c} onClick={()=>setCatActiva(c)} className={`px-3 py-1.5 rounded-lg font-black text-[9px] uppercase border ${catActiva.toUpperCase()===c.toUpperCase()?'bg-pink-500 text-white shadow-md':'bg-slate-50 text-slate-400'}`}>{c}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {products.filter(p => p.categoria.toUpperCase() === catActiva.toUpperCase()).map(p => (
+                                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border mb-3 shadow-sm">
+                                        <input className="font-black uppercase text-xs bg-transparent w-full mb-2 outline-none border-b border-transparent focus:border-pink-300" defaultValue={p.nombre} onBlur={(x)=>handleUpdateProduct(p.id, 'nombre', x.target.value)} />
+                                        
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-slate-400 uppercase">Mover a categoría:</span>
+                                                <select className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" value={p.categoria} onChange={(x)=>handleUpdateProduct(p.id, 'categoria', x.target.value)}>
+                                                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-slate-400 uppercase">División (Ej. AGUA):</span>
+                                                <input className="font-black uppercase text-[10px] bg-transparent border-b border-pink-200 outline-none focus:border-pink-500 text-blue-500 py-1" defaultValue={p.subcategoria || ''} onBlur={(x)=>handleUpdateProduct(p.id, 'subcategoria', x.target.value)} placeholder="..." />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-between items-center mt-2">
+                                            <div className="flex gap-3">
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Stock</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs" defaultValue={p.stock} onBlur={(x)=>handleUpdateProduct(p.id, 'stock', x.target.value)} /></div>
+                                                <div className="text-center"><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Precio $</p><input type="number" className="w-16 p-2 text-center font-black bg-white border rounded-xl text-xs text-pink-600" defaultValue={p.precio} onBlur={(x)=>handleUpdateProduct(p.id, 'precio', x.target.value)} /></div>
+                                            </div>
+                                            <button onClick={() => confirm("¿Borrar permanentemente?") && db.collection('productos').doc(p.id).delete()} className="text-red-300 font-black text-xl hover:text-red-500">✕</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                <button onClick={handleAddProduct} className="w-full py-4 mt-2 bg-pink-50 border-2 border-dashed border-pink-200 text-pink-600 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-inner">+ Añadir Sabor a {catActiva}</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'history' && (
+                        <div className="flex-1 p-6 overflow-y-auto bg-slate-100 scroll-hide">
+                            {selectedCorte ? (
+                                renderDetalleCorte()
+                            ) : (
+                                <>
+                                    <div className="bg-pink-600 p-8 rounded-[40px] mb-6 text-white text-center shadow-xl">
+                                        <p className="text-[10px] font-black opacity-70 uppercase mb-2 tracking-widest">Caja Actual</p>
+                                        <p className="text-7xl font-black tracking-tighter mb-6">${totalCajaActual}</p>
+                                        <button onClick={hacerCorteCaja} className="bg-white text-pink-600 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all">Realizar Corte 💰</button>
+                                    </div>
+
+                                    <div className="mb-8">
+                                        <h2 className="font-black uppercase text-pink-600 mb-3 text-sm">🧾 Ventas del Día (Caja Actual)</h2>
+                                        <div className="space-y-3">
+                                            {tickets.length === 0 ? <p className="text-center text-slate-400 italic text-sm mt-4">Aún no hay ventas registradas hoy.</p> : 
+                                             tickets.sort((a,b)=>b.timestamp-a.timestamp).map(t => (
+                                                <div key={t.id} className={`bg-white p-5 rounded-[25px] border-r-8 shadow-sm flex flex-col ${t.tipo==='Venta'?'border-green-500':t.tipo==='Devolución'?'border-orange-500 opacity-90':t.tipo==='Merma'?'border-red-400 opacity-80':'border-blue-400 opacity-80'}`}>
+                                                    <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-black text-[12px] uppercase">{t.hora}</span>
+                                                            <span className="text-[9px] bg-slate-100 px-2 py-0.5 rounded-lg text-slate-500 font-bold uppercase">{t.vendedor}</span>
+                                                            {t.tipo !== 'Venta' && <span className={`text-[8px] px-2 py-0.5 rounded-lg text-white font-black uppercase ${t.tipo==='Devolución'?'bg-orange-500':t.tipo==='Merma'?'bg-red-400':'bg-blue-400'}`}>{t.tipo}</span>}
+                                                        </div>
+                                                        <div className="text-right leading-none">
+                                                            <p className={`text-2xl font-black ${t.tipo === 'Devolución' ? 'text-orange-500' : ''}`}>{t.tipo === 'Devolución' ? `-$${t.total}` : `$${t.total}`}</p>
+                                                            {t.descuento > 0 && <p className="text-[9px] font-black text-pink-500 uppercase mt-1">Desc {t.descuento}%</p>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        {t.items.map(i => (
+                                                            <div key={i.id} className="flex justify-between text-[10px] text-slate-500 font-black uppercase">
+                                                                <span>{i.qty}x {i.nombre}</span>
+                                                                <span>${i.precio} c/u</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    
+                                    <h2 className="font-black uppercase text-pink-600 mb-4 text-sm border-t-2 border-slate-200 pt-6">📑 Auditoría de Cortes Mensuales</h2>
+                                    {Object.entries(cortesPorMes).map(([mes, cortesDelMes]) => {
+                                        const totalMes = cortesDelMes.reduce((suma, c) => suma + (Number(c.total) || 0), 0);
+                                        return (
+                                        <div key={mes} className="mb-6 bg-white p-6 rounded-[35px] shadow-sm">
+                                            <div className="flex justify-between items-end border-b-2 border-slate-100 pb-2 mb-4">
+                                                <h3 className="font-black text-slate-400 uppercase text-[12px] tracking-widest">{mes}</h3>
+                                                <span className="font-black text-pink-600 text-sm uppercase bg-pink-50 px-3 py-1 rounded-lg">Total: ${totalMes}</span>
+                                            </div>
+                                            {cortesDelMes.map(c => (
+                                                <div key={c.id} className="p-4 bg-slate-50 rounded-[20px] border-l-[6px] border-pink-400 mb-3 shadow-sm">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div>
+                                                            <p className="font-black text-[11px] uppercase text-slate-700">{c.fecha} - {c.hora}</p>
+                                                            <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Cerró: {c.responsable}</p>
+                                                        </div>
+                                                        <p className="text-xl font-black text-green-600">${c.total}</p>
+                                                    </div>
+                                                    <button onClick={() => setSelectedCorte(c)} className="w-full bg-blue-50 text-blue-600 font-black text-[10px] uppercase py-2 rounded-xl mt-1 hover:bg-blue-100 transition-colors">Detalle Exacto 🔍</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        );
+                                    })}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
